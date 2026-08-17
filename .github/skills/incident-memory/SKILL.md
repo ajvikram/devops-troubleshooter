@@ -40,31 +40,22 @@ findings to memory. Only save when the user confirms.
 
 ## Procedure: Recall (Search Memory)
 
-### Step 1 — Read the index
-Search the workspace for `.github/memory/INDEX.md` and read it. This gives
-you all recorded incidents organized by app and by issue type.
+Token-cheap. Follow **`token-thrift`**.
 
-### Step 2 — Find relevant entries
-Look for entries matching:
-- **Same application** as the current incident (e.g., `payments-api`)
-- **Same issue type** (e.g., CrashLoopBackOff, OOMKilled, HelmDrift)
-- **Same namespace or cluster** if the issue might be environment-specific
+### Step 1 — Read the index only
+Read `.github/memory/INDEX.md`. Do not search or open other memory files yet.
 
-### Step 3 — Read matching records
-For each relevant entry, read the full `.md` file. Pay attention to:
-- **Root Cause** — is the same root cause likely here?
-- **Resolution** — did a specific fix work last time?
-- **Lessons Learned** — are there prevention measures that weren't applied?
+### Step 2 — Match one line
+Look for the **same application** or **same issue type**. Use the one-line summary.
+If nothing matches, say so and continue. Do not open e2e example records unless
+the user is investigating `dto-e2e`.
 
-### Step 4 — Apply to current investigation
-If a past incident is relevant, tell the user:
-- "This looks similar to [past incident link]. Last time the root cause was X
-  and it was resolved by Y."
-- Use the prior RCA to guide your investigation — check the same resources,
-  run the same queries, look for the same log patterns.
-- If the prior resolution applies directly, treat it as a **recommendation to verify**, not as something to apply.
+### Step 3 — At most one full record
+If a line matches, read **that one** file. Use **Symptom** and **Root Cause** only.
+Treat the prior cause as a **hypothesis to test**, not the answer.
 
-If no relevant incidents exist, say so and proceed with normal investigation.
+### Step 4 — Tell the user (one sentence)
+"INDEX has a similar `crashloop` on 2026-08-10 (missing DSN) — I will test that, not assume it."
 
 ---
 
@@ -160,5 +151,5 @@ Tell the user what was saved and where:
   explicitly asks to update one.
 - **Never include secrets, passwords, tokens, or PII** in incident records.
   Redact before saving.
-- **Keep summaries concise** — incident files should be scannable, not
-  exhaustive transcripts.
+- **Keep summaries concise** — incident files should be scannable (~60 lines), not
+  exhaustive transcripts. Quote ≤3 log lines. INDEX remains one line per incident.

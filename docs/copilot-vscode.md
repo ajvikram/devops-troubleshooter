@@ -1,6 +1,7 @@
 # Using this kit in VS Code with GitHub Copilot
 
 Day-to-day usage (prompts, RCA format, demo cluster): [user-guide.md](user-guide.md).
+Several kube contexts or kubeconfig files: [clusters.md](clusters.md).
 
 This is the primary path for **VS Code**. Custom agents, skills, and MCP servers are loaded by
 **GitHub Copilot Chat in Agent mode** — not by Ask mode, and not by Copilot completions.
@@ -41,7 +42,11 @@ macOS: [macos.md](macos.md). Windows: [windows.md](windows.md).
 6. Open **Copilot Chat** (`Ctrl+Cmd+I` on macOS, `Ctrl+Alt+I` on Windows).
 7. Set the mode to **Agent** (not Ask, not Edit).
 8. Open the **agents** dropdown and choose **DevOps Troubleshooter**.
-9. Prompt example: `payments-api in staging is CrashLooping`.
+   Or type `/` and pick **investigate**, **scan-namespace**, **from-alert**,
+   **use-cluster**, or **clarify**.
+9. Prompt example: `payments-api in staging is CrashLooping, namespace payments, after the 14:00 deploy.`
+   If staging matches more than one kube context, the agent lists them and waits.
+   That is intended — [clusters.md](clusters.md).
 
 If the agent dropdown does not list DevOps Troubleshooter:
 
@@ -110,7 +115,24 @@ Official connection variables (uncomment in `.vscode/mcp.env`; do **not** enable
 
 Or merge [`.vscode/mcp.grafana.json`](../.vscode/mcp.grafana.json) into `.vscode/mcp.json`. Set `GRAFANA_URL` and `GRAFANA_SERVICE_ACCOUNT_TOKEN` in `.vscode/mcp.env`. Requires `uvx`. The Grafana server is `--disable-write` and limited to datasource, Prometheus, and Loki tools (Copilot **128 tools** cap). Start **grafana** next to **kubernetes-inspect**.
 
+## Slash prompts
+
+Files in `.github/prompts/` show up when you type `/` in Copilot Chat (Agent mode):
+
+| Prompt | Use |
+|--------|-----|
+| `/investigate` | Named incident → RCA + recommendations + proposed git diff |
+| `/scan-namespace` | Namespace health table, then RCA |
+| `/from-alert` | Paste Alertmanager / Grafana / PagerDuty JSON |
+| `/use-cluster` | Pin a kube context first |
+| `/clarify` | Vague prompt — numbered options, then investigate |
+
+The agent also asks without `/clarify` when cluster, namespace, or workload is
+ambiguous. Reply with a number. Do not run `kubectl config use-context`.
+
 ## Skills and memory
 
 Skills in `.github/skills/` load on demand. Memory lives in `.github/memory/`.
 The troubleshooter searches `INDEX.md` first and offers to save an incident after the RCA.
+RCA write-up includes an **evidence ledger** and a **proposed change** (diff only).
+Keep sessions small: [token-use.md](token-use.md) (`token-thrift` — INDEX-only memory, `tail=80`).

@@ -1,0 +1,26 @@
+{
+  "servers": {
+    "kubernetes-inspect-staging": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/bin/kubernetes-mcp-server",
+      "args": [
+        "--read-only",
+        "--toolsets",
+        "core,config,helm",
+        "--kubeconfig",
+        "/Users/you/.kube/staging.config"
+      ]
+    },
+    "kubernetes-inspect-prod": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/bin/kubernetes-mcp-server",
+      "args": [
+        "--read-only",
+        "--toolsets",
+        "core,config,helm",
+        "--kubeconfig",
+        "/Users/you/.kube/prod.config"
+      ]
+    }
+  }
+}

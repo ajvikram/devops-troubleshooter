@@ -10,8 +10,9 @@ the application.
 - **By Issue Type**: the same incidents cross-referenced by failure category.
 - Entries are added when the troubleshooter completes an RCA and the user confirms.
 - File naming: `<app>/<issue-type>--<YYYY-MM-DD>.md`
+- Keep this file to **one line per incident** (token-thrift). Do not paste logs here.
 - Kit **example** records below are from the e2e fixtures. Treat them as hypotheses
-  to test, not as the current cluster’s RCA.
+  to test, not as the current cluster’s RCA. Do not open them unless the user is on `dto-e2e`.
 
 ---
 

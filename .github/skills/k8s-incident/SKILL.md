@@ -18,17 +18,14 @@ use this skill plus **`service-path`**.
 
 ## 1. Establish context
 
-```
-Tool: configuration_contexts_list
-```
-
-Confirm kube context with the user.
+Follow **`kube-context`** first if the cluster is not already pinned. Do **not**
+re-list contexts on every later call. Pass `context=<picked>` below.
 
 ## 2. List pods — all of them
 
 ```
 Tool: pods_list_in_namespace
-Args: namespace=<target>
+Args: namespace=<target>, context=<picked>
 ```
 
 Do not only query `status.phase!=Running`. Not-Ready Running pods would disappear.
@@ -49,7 +46,7 @@ Record restart count, `startTime`, and **lastState** (reason, exit code, finishe
 
 ```
 Tool: events_list
-Args: namespace=<target>, fieldSelector="type=Warning"
+Args: namespace=<target>, fieldSelector="type=Warning", context=<picked>
 ```
 
 - `FailedScheduling` — CPU/memory, affinity, taints
@@ -63,15 +60,17 @@ Args: namespace=<target>, fieldSelector="type=Warning"
 
 ```
 Tool: pods_log
-Args: name=<pod>, namespace=<ns>, tail=200
+Args: name=<one pod of the ReplicaSet>, namespace=<ns>, tail=80, context=<picked>
 ```
 
 If restart count > 0, always also:
 
 ```
 Tool: pods_log
-Args: name=<pod>, namespace=<ns>, previous=true, tail=200
+Args: name=<same pod>, namespace=<ns>, previous=true, tail=80, context=<picked>
 ```
+
+If 80 lines missed the error, retry `tail=200` once. Do not log every replica.
 
 Scan for stack traces, `connection refused`, `permission denied`, config parse errors,
 `OOM` before kernel kill, probe-related 404s on the health path.

@@ -10,6 +10,7 @@ set -euo pipefail
 #   ./scripts/init.sh --ide vscode,cursor,cli
 #   ./scripts/init.sh --with-observability
 #   ./scripts/init.sh --proxy http://proxy.corp:8080 --cacert /path/ca.pem
+#   ./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BIN_DIR="${ROOT_DIR}/bin"
@@ -24,6 +25,7 @@ MCP_SELECT=""
 IDE_FILTER=""
 PROXY="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
 CACERT="${SSL_CERT_FILE:-${CURL_CA_BUNDLE:-}}"
+KUBECONFIG_FLAG=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,6 +41,8 @@ while [ $# -gt 0 ]; do
     --proxy=*) PROXY="${1#--proxy=}" ;;
     --cacert) CACERT="${2:-}"; shift ;;
     --cacert=*) CACERT="${1#--cacert=}" ;;
+    --kubeconfig) KUBECONFIG_FLAG="${2:-}"; shift ;;
+    --kubeconfig=*) KUBECONFIG_FLAG="${1#--kubeconfig=}" ;;
     --help|-h)
       cat <<'EOF'
 Usage: ./scripts/init.sh [options]
@@ -55,6 +59,7 @@ Discover platform, IDEs, and agent harnesses, then write MCP configs.
   --with-databases        Download mcp-toolbox (still pick engines via prompt or --mcp)
   --proxy URL             HTTP proxy for binary download
   --cacert PEM            Corporate CA for binary download
+  --kubeconfig PATHS      KUBECONFIG for MCP (one file, or colon-separated files on Unix)
 
 On a TTY, init asks which optional MCPs to download and wire. CI / pipes skip the prompt.
 EOF
@@ -140,7 +145,33 @@ case ",$ides," in *",visualstudio,"*) add_h github-copilot-visualstudio ;; esac
 [ -f "${ROOT_DIR}/.vscode/settings.json" ] && grep -q "agentHost\|Agent Host\|chat.agentHost" "${ROOT_DIR}/.vscode/settings.json" 2>/dev/null && add_h vscode-agent-host || true
 [ -d "${HOME}/.copilot" ] && add_h copilot-user-profile
 
-kubeconfig="${KUBECONFIG:-${HOME}/.kube/config}"
+kubeconfig="${KUBECONFIG_FLAG:-${KUBECONFIG:-${HOME}/.kube/config}}"
+
+kubeconfig_any_exists() {
+  local spec="$1"
+  local f
+  local IFS=':'
+  for f in $spec; do
+    [ -n "$f" ] && [ -f "$f" ] && return 0
+  done
+  return 1
+}
+
+kubeconfig_exists="false"
+kubeconfig_any_exists "$kubeconfig" && kubeconfig_exists="true"
+
+kube_contexts_json="[]"
+kube_current=""
+if have kubectl; then
+  kube_current="$(KUBECONFIG="$kubeconfig" kubectl config current-context 2>/dev/null || true)"
+  if have python3; then
+    kube_contexts_json="$(
+      { KUBECONFIG="$kubeconfig" kubectl config get-contexts -o name 2>/dev/null || true; } \
+        | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))'
+    )" || kube_contexts_json="[]"
+  fi
+fi
+[ -n "$kube_contexts_json" ] || kube_contexts_json="[]"
 helm_ok="false"
 have helm && helm_ok="true"
 kubectl_ok="false"
@@ -165,7 +196,9 @@ print_report() {
   "ides": "$ides",
   "harness": "$harness",
   "kubeconfig": "$kubeconfig",
-  "kubeconfig_exists": $([ -f "$kubeconfig" ] && echo true || echo false),
+  "kubeconfig_exists": $kubeconfig_exists,
+  "kube_contexts": $kube_contexts_json,
+  "kube_current_context": "$kube_current",
   "helm": $helm_ok,
   "kubectl": $kubectl_ok,
   "uvx": $uvx_ok,
@@ -184,7 +217,11 @@ echo "  platform:  $os/$arch"
 echo "  session:   $session"
 echo "  IDEs:      ${ides:-none}"
 echo "  harness:   ${harness:-none}"
-echo "  kubeconfig: $kubeconfig $([ -f "$kubeconfig" ] && echo '[found]' || echo '[missing]')"
+echo "  kubeconfig: $kubeconfig $([ "$kubeconfig_exists" = true ] && echo '[found]' || echo '[missing]')"
+if [ "$kube_contexts_json" != "[]" ]; then
+  echo "  contexts:   $kube_contexts_json"
+  echo "  current:    ${kube_current:-none}"
+fi
 echo "  helm:      $helm_ok   kubectl: $kubectl_ok"
 echo ""
 
@@ -201,6 +238,15 @@ setup_args=()
 [ -n "$CACERT" ] && setup_args+=(--cacert "$CACERT")
 
 [ -f "${VSCODE_DIR}/mcp.env" ] || cp "${VSCODE_DIR}/mcp.env.example" "${VSCODE_DIR}/mcp.env"
+
+if [ -n "$KUBECONFIG_FLAG" ]; then
+  envf="${VSCODE_DIR}/mcp.env"
+  tmp="${envf}.tmp"
+  grep -vE '^[[:space:]]*#?[[:space:]]*KUBECONFIG=' "$envf" > "$tmp" || true
+  printf 'KUBECONFIG=%s\n' "$kubeconfig" >> "$tmp"
+  mv "$tmp" "$envf"
+  echo "Wrote KUBECONFIG to .vscode/mcp.env (restart kubernetes-inspect after init)"
+fi
 
 env_has() {
   [ -f "${VSCODE_DIR}/mcp.env" ] && grep -qE "^[[:space:]]*$1=.+" "${VSCODE_DIR}/mcp.env"
@@ -511,8 +557,9 @@ if [ "$helm_ok" != true ]; then
   echo "  macOS: brew install helm"
   echo "  Linux: https://helm.sh/docs/intro/install/"
 fi
-if [ ! -f "$kubeconfig" ]; then
+if [ "$kubeconfig_exists" != true ]; then
   echo "Warning: kubeconfig not found at $kubeconfig"
+  echo "  Multiple files: KUBECONFIG=file1:file2:file3  (Windows: file1;file2)"
 fi
 
 echo ""

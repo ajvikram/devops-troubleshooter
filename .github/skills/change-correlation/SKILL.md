@@ -21,15 +21,15 @@ If `helm`, `git`, or `gh` is missing, record that as an RCA **gap** and continue
 ## Allowlisted commands only
 
 ```
-helm history <release> -n <namespace>
-helm status <release> -n <namespace>
-helm get values <release> -n <namespace>
-helm get values <release> -n <namespace> --revision <N>
-helm get metadata <release> -n <namespace>
-git log -20 --oneline -- <path>
+helm history <release> -n <namespace> --kube-context <context>
+helm status <release> -n <namespace> --kube-context <context>
+helm get values <release> -n <namespace> --kube-context <context>
+helm get values <release> -n <namespace> --kube-context <context> --revision <N>
+helm get metadata <release> -n <namespace> --kube-context <context>
+git log -8 --oneline -- <path>
 git log -5 -p -- <path>
 git blame -L <range> <file>
-gh run list --limit 15
+gh run list --limit 8
 gh run view <id> --json conclusion,displayTitle,headBranch,updatedAt,url
 gh pr list --search "<app OR namespace>" --limit 10
 gh pr view <n>
@@ -49,7 +49,7 @@ Match the failing workload to a release (name, namespace, chart, **revision**, s
 Then:
 
 ```
-execute: helm history <release> -n <namespace>
+execute: helm history <release> -n <namespace> --kube-context <context>
 ```
 
 Record for the last several revisions: revision number, status, chart version,
@@ -64,8 +64,8 @@ Hypothesis pattern:
 | Revision N failed (`failed` / `pending-rollback`) | Deploy itself did not finish |
 
 ```
-execute: helm get values <release> -n <namespace> --revision <N>
-execute: helm get values <release> -n <namespace> --revision <N-1>
+execute: helm get values <release> -n <namespace> --kube-context <context> --revision <N>
+execute: helm get values <release> -n <namespace> --kube-context <context> --revision <N-1>
 ```
 
 Diff **image**, probes, env **names**, replicaCount, ingress host. Quote the

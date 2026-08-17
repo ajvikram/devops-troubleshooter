@@ -21,11 +21,12 @@ database / Grafana MCP servers.
 **CrashLoopBackOff is a symptom.** The agent must name the cause, with competing
 hypotheses, a timeline, and **recommendations**. Restart is a mitigation, not a fix.
 
-**Start here:** [User guide](docs/user-guide.md) · [Init](docs/init.md) · [macOS](docs/macos.md) · [Windows](docs/windows.md)
+**Start here:** [User guide](docs/user-guide.md) · [Clusters](docs/clusters.md) · [Token use](docs/token-use.md) · [Init](docs/init.md) · [macOS](docs/macos.md) · [Windows](docs/windows.md)
 
 ```bash
 ./scripts/init.sh                          # asks which MCPs to download
 ./scripts/init.sh --mcp grafana,postgres,mongodb
+./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
 ./scripts/init.sh --yes
 ./tests/e2e.sh                             # kind cluster with planted RCA fixtures
 ```
@@ -33,6 +34,7 @@ hypotheses, a timeline, and **recommendations**. Restart is a mitigation, not a 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1 -Mcp grafana,mongodb
+powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
 ```
 
 ## How it works
@@ -58,8 +60,9 @@ flowchart TB
 
 | Output | Meaning |
 |--------|---------|
-| **RCA** | Symptom, timeline, hypotheses, root cause, blast radius |
+| **RCA** | Symptom (context + namespace), timeline, hypotheses, evidence ledger, root cause, blast radius |
 | **Recommendations** | What would address the cause (chart, config, TLS, quota, git). Not executed. Restart is labeled **mitigation** when mentioned. |
+| **Proposed change** | Unified diff against the workspace chart when the cause is in git. Never committed or opened as a PR. |
 
 **Running ≠ Ready ≠ reachable.** Pods can be Running while Service Endpoints are empty.
 
@@ -69,11 +72,14 @@ flowchart TB
   <img src="docs/images/rca-flow.png" alt="RCA loop: symptom, evidence, hypotheses, root cause, recommendations" width="920">
 </p>
 
-1. **Symptom** — user impact, not the Kubernetes object name.
-2. **Evidence** — logs, events, Service/Endpoints, Ingress/TLS, Helm history, git.
-3. **Hypotheses** — 2–4, each kept or rejected with evidence.
-4. **Root cause** — class + cause + confidence. CrashLoopBackOff is not a cause.
-5. **Recommendations** — what a human would change in git/chart/TLS/quota. Not applied.
+1. **Clarify** — if cluster, namespace, or workload is missing or ambiguous, ask (numbered list). Do not guess.
+2. **Pick cluster** — pin kube context; later calls pass `context=`. Helm: `--kube-context`.
+3. **Memory** — read **INDEX.md** only; at most one matching record (Symptom + Root Cause).
+4. **Symptom** — user impact, not the Kubernetes object name.
+5. **Evidence** — small first pass (`pods_log` tail=80, one pod per ReplicaSet). At most two evidence skills.
+6. **Hypotheses** — 2–4, each kept or rejected with evidence (ledger ≤8 short rows).
+7. **Root cause** — class + cause + confidence. CrashLoopBackOff is not a cause.
+8. **Recommendations** — what a human would change in git/chart/TLS/quota. Not applied. Small proposed diff when the fix is in the repo.
 
 ## Platform support
 
@@ -94,18 +100,55 @@ Windows amd64 and arm64 are both supported. Use PowerShell on Windows, not `cmd.
 
 1. macOS/Linux: `./scripts/init.sh`. Windows: `.\scripts\init.ps1`. Discovers IDE/harness, **asks which MCPs to install**, and writes MCP config.
 2. Start **kubernetes-inspect** (VS Code: **MCP: List Servers**). Trust it.
-3. Agent mode → **DevOps Troubleshooter**.
+3. Agent mode → **DevOps Troubleshooter**, or `/investigate` / `/scan-namespace` / `/from-alert` / `/use-cluster` / `/clarify`.
 4. Prompt: `Checkout is failing in staging, namespace payments, after the 14:00 deploy.`
 
 Full walkthrough, good prompts, and RCA shape: **[docs/user-guide.md](docs/user-guide.md)**.
+Several kubeconfigs or contexts: **[docs/clusters.md](docs/clusters.md)**.
+Keep sessions small: **[docs/token-use.md](docs/token-use.md)**.
 
 Behind a corporate proxy: [docs/proxy-ssl.md](docs/proxy-ssl.md).
+
+## Multiple clusters
+
+See **[docs/clusters.md](docs/clusters.md)** for the full guide.
+
+The agent **lists kube contexts and you pick one**. If `staging` or `prod` matches
+more than one name, it **asks** (numbered list) instead of guessing. It does not run
+`kubectl config use-context` (that would rewrite your kubeconfig). After you pick,
+every inspect call uses `context: <name>` and Helm uses `--kube-context <name>`.
+
+| You have | What to set |
+|----------|-------------|
+| One kubeconfig, several contexts | Nothing extra. `/use-cluster` or “use context staging”. |
+| Several kubeconfig files | Unix: `KUBECONFIG=file1:file2`. Windows: `file1;file2`. Restart **kubernetes-inspect**. |
+| Prod must never share a process with staging | Copy `.vscode/mcp.multi-cluster.example.json` — one MCP server per file. |
+
+`./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"` writes `KUBECONFIG` into `.vscode/mcp.env`.
+
+## Token use
+
+See **[docs/token-use.md](docs/token-use.md)**. The **`token-thrift`** skill keeps Copilot/Cursor
+from burning the context window:
+
+- Memory: **INDEX.md** one-liners; open at most **one** matching file
+- Skills: after classify, **at most two** evidence skills — not every `SKILL.md`
+- Logs: one pod per ReplicaSet, `tail=80` first
+- RCA: ledger ≤8 short rows; summarize MCP output, never paste full YAML/values
+- MCP: Kubernetes inspect only until you opt in (Copilot **128 tools** cap)
+
+Do not start Grafana and every `db-*` server for a CrashLoop.
 
 ## Skills
 
 | Skill | When |
 |-------|------|
-| `rca` | **Every investigation.** Required write-up. |
+| `rca` | **Every investigation.** Required write-up (ledger + proposed git diff). |
+| `token-thrift` | Every session — INDEX-only memory, small logs, no YAML dumps |
+| `kube-context` | Multiple clusters/files — list contexts, you pick, pin `context=` |
+| `clarify` | Missing or ambiguous cluster / namespace / workload / time — ask, don’t guess |
+| `cluster-scan` | Vague “something is wrong in ns X” — severity-tagged findings first |
+| `alert-intake` | Pasted Prometheus / Alertmanager / Grafana / PagerDuty alert |
 | `k8s-incident` | CrashLoop, ImagePull, OOM, probes, Pending |
 | `service-path` | 502s, not Ready, empty Endpoints, selector mismatch |
 | `ingress-tls` | Wrong Ingress backend, missing/expired TLS cert, host mismatch |
@@ -115,7 +158,9 @@ Behind a corporate proxy: [docs/proxy-ssl.md](docs/proxy-ssl.md).
 | `helm-drift` | Live spec ≠ workspace chart |
 | `db-evidence` | Logs point at Postgres / MySQL / Oracle / SQL Server / Mongo / … |
 | `observability` | Grafana MCP (Prometheus / Loki) |
-| `incident-memory` | Recall past RCAs; save after you confirm |
+| `incident-memory` | INDEX.md first; save a short RCA after you confirm |
+
+Copilot Chat: type `/` for **investigate**, **scan-namespace**, **from-alert**, **use-cluster**, **clarify** (`.github/prompts/`).
 
 ## Test it (e2e)
 
@@ -150,6 +195,7 @@ Fixtures in `tests/fixtures/` (namespace `dto-e2e`):
 | `pending-quota` | ResourceQuota `tiny` pods 3/3 — new replica cannot schedule |
 
 Then ask Copilot: `Something is wrong in namespace dto-e2e. Investigate all workloads.`
+Pick kube context `kind-dto-e2e` if the agent lists several (`/use-cluster`).
 
 ```bash
 kind delete cluster --name dto-e2e
@@ -162,6 +208,8 @@ CI runs kit tests on Ubuntu, macOS, and Windows, plus the kind cluster job on Ub
 | Doc | Contents |
 |-----|----------|
 | [User guide](docs/user-guide.md) | Daily use, prompts, RCA format, demo cluster |
+| [Clusters](docs/clusters.md) | Multiple kubeconfigs / contexts; when the agent asks |
+| [Token use](docs/token-use.md) | Keep investigations small (INDEX, tails, skill budget) |
 | [Init](docs/init.md) | OS / IDE / harness discovery |
 | [macOS](docs/macos.md) | Homebrew, Apple Silicon, kind/Colima |
 | [Windows](docs/windows.md) | PowerShell, `.exe`, `npx.cmd` |
@@ -173,16 +221,19 @@ CI runs kit tests on Ubuntu, macOS, and Windows, plus the kind cluster job on Ub
 
 ```
 .github/agents/          devops-troubleshooter.agent.md
-.github/skills/          rca, k8s-incident, saturation, service-path, ingress-tls, change-correlation, gitops, …
+.github/skills/          rca, token-thrift, clarify, kube-context, cluster-scan, …
+.github/prompts/         investigate, scan-namespace, from-alert, use-cluster, clarify
 .github/memory/          INDEX + example RCAs + _TEMPLATE.md
 deploy/                  rbac-troubleshooter-view.yaml (read-only SA)
 .github/workflows/e2e.yml
 .vscode/mcp.json         Default MCP (npx, inspect-only). init overwrites locally with binaries
 .vscode/mcp.*.json       Binary / Windows / DB / Grafana / optional remediator variants
 .vscode/mcp.env.example  Template — copy to mcp.env (gitignored)
+.vscode/mcp.multi-cluster.example.json  Optional: one MCP server per kubeconfig file
 scripts/init.sh|.ps1     Discover OS, IDE, harness; ask which MCPs; write config
 scripts/setup.sh|.ps1    Download MCP binaries only
 tests/                   kit.sh + kit.ps1, e2e.sh + e2e.ps1, kind fixtures
+docs/                    user-guide, clusters, token-use, init, macos, windows, …
 docs/images/             README diagrams
 LICENSE                  MIT
 ```

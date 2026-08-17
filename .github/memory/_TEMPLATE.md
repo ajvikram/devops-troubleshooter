@@ -13,6 +13,8 @@ time_to_resolve: <duration, e.g. 15m, 2h>
 
 # <app>: <issue_type> (<date>)
 
+<!-- Keep ~60 lines. Quote ≤3 log lines. No raw MCP dumps (token-thrift). -->
+
 ## Symptom
 <!-- User-facing impact, not just the Kubernetes object state -->
 
@@ -31,8 +33,12 @@ time_to_resolve: <duration, e.g. 15m, 2h>
 <!-- - H1 … CONFIRMED/REJECTED — evidence -->
 
 
+## Evidence ledger
+<!-- ID | claim | tool + object | quote. Every Root Cause clause needs a row. -->
+
+
 ## Root Cause
-<!-- Class + underlying reason + confidence. Not "CrashLoopBackOff". -->
+<!-- Class + underlying reason + confidence. Cite ledger IDs. Not "CrashLoopBackOff". -->
 
 
 ## Blast radius
@@ -41,6 +47,10 @@ time_to_resolve: <duration, e.g. 15m, 2h>
 
 ## Recommendations
 <!-- What would address the cause. Not executed. Restart = mitigation if mentioned. -->
+
+
+## Proposed change
+<!-- Unified diff against the workspace chart, or "no repo patch" if the fix is outside git. -->
 
 
 ## Resolution

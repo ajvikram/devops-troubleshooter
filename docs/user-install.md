@@ -8,6 +8,7 @@ Prefer workspace [init](init.md) when you only need this kit in one repo.
 Init can write `~/.copilot/mcp-config.json` if that file does not already exist.
 
 Primary usage is still **Copilot Chat → Agent mode**. See [copilot-vscode.md](copilot-vscode.md).
+Several kubeconfigs: [clusters.md](clusters.md).
 Behind a corporate proxy, do [proxy-ssl.md](proxy-ssl.md) first.
 macOS: [macos.md](macos.md). Windows: [windows.md](windows.md).
 
@@ -40,7 +41,7 @@ Copilot Chat agents dropdown. If VS Code is already running, reload the window
 **macOS / Linux:**
 ```bash
 mkdir -p ~/.copilot/skills
-for s in k8s-incident service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
+for s in k8s-incident kube-context clarify token-thrift cluster-scan alert-intake service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
   mkdir -p ~/.copilot/skills/$s
   cp .github/skills/$s/SKILL.md ~/.copilot/skills/$s/
 done
@@ -49,7 +50,7 @@ done
 **Windows (PowerShell):**
 ```powershell
 $skills = "$env:USERPROFILE\.copilot\skills"
-foreach ($s in @("k8s-incident","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
+foreach ($s in @("k8s-incident","kube-context","clarify","token-thrift","cluster-scan","alert-intake","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
     New-Item -ItemType Directory -Force -Path "$skills\$s"
     Copy-Item ".github\skills\$s\SKILL.md" "$skills\$s\"
 }
@@ -57,6 +58,10 @@ foreach ($s in @("k8s-incident","service-path","ingress-tls","change-correlation
 
 Skills loaded from `~/.copilot/skills/` (or `%USERPROFILE%\.copilot\skills\`
 on Windows) are auto-discovered by Copilot in all workspaces.
+
+Slash prompts (`/investigate`, `/use-cluster`, `/clarify`, …) live in the
+**workspace** `.github/prompts/` folder. Copy that directory into each app repo
+you debug, or open this kit as the workspace. They are not loaded from `~/.copilot`.
 
 ## 3. Configure MCP servers (user level)
 
@@ -158,20 +163,52 @@ Grafana: merge `.vscode/mcp.grafana.json` and set `GRAFANA_URL` + `GRAFANA_SERVI
 2. Command Palette → `MCP: List Servers` — you should see **kubernetes-inspect**.
 3. Start **kubernetes-inspect**. Default kubeconfig is `~/.kube/config` (macOS/Linux) or `%USERPROFILE%\.kube\config` (Windows).
 4. Open Copilot Chat → **Agent** mode → **DevOps Troubleshooter**.
-5. Ask it to list your kube contexts to confirm connectivity.
+5. Ask it to list your kube contexts to confirm connectivity. If several match,
+   pick a number — do not expect it to guess `current-context`. [clusters.md](clusters.md).
 
 ## Managing multiple clusters
 
-### Option A: Context switching (recommended)
+Full guide: [clusters.md](clusters.md).
 
-Use a single kubeconfig with multiple contexts. The troubleshooter will
-list all contexts and let you pick the right one at investigation time.
+The troubleshooter **picks a kube context in chat**. It does not rewrite
+`kubectl config current-context`. If `staging`/`prod` matches more than one
+context, it **asks**.
 
-### Option B: Separate kubeconfig files
+### Option A: One kubeconfig, many contexts (usual)
 
-Point `KUBECONFIG` in `mcp.env` (or the OS environment) at different files for
-different clusters. Restart the MCP server after switching, or configure multiple
-MCP server entries (e.g., `kubernetes-inspect-prod`, `kubernetes-inspect-staging`).
+Contexts live in `~/.kube/config` (or `%USERPROFILE%\.kube\config`). Start
+**kubernetes-inspect**, choose **DevOps Troubleshooter**, and either:
+
+- Say `use context staging` / `/use-cluster`
+- Or let it list contexts and pick a number
+
+Every later MCP call uses `context: <name>`. Helm uses `--kube-context <name>`.
+
+### Option B: Separate kubeconfig files (merged)
+
+Point `KUBECONFIG` at **all** files, then restart **kubernetes-inspect**:
+
+- macOS/Linux: `KUBECONFIG=/Users/you/.kube/config:/Users/you/.kube/prod.config`
+- Windows: `KUBECONFIG=C:\Users\you\.kube\config;C:\Users\you\.kube\prod.config`
+
+Put that in `.vscode/mcp.env` (gitignored) or pass:
+
+```bash
+./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
+```
+
+```powershell
+.\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
+```
+
+Then pick a context in chat as in Option A.
+
+### Option C: Isolated MCP servers (prod must not mix with staging)
+
+Copy [`.vscode/mcp.multi-cluster.example.json`](../.vscode/mcp.multi-cluster.example.json)
+into `.vscode/mcp.json`, point `--kubeconfig` at one file per server, start only
+the server you need. On Windows use `kubernetes-mcp-server.exe` and `npx.cmd`
+as in the other Windows JSON files.
 
 ## Security notes
 
@@ -185,7 +222,7 @@ MCP server entries (e.g., `kubernetes-inspect-prod`, `kubernetes-inspect-staging
 **macOS / Linux:**
 ```bash
 cp .github/agents/devops-troubleshooter.agent.md ~/.copilot/agents/
-for s in k8s-incident service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
+for s in k8s-incident kube-context clarify token-thrift cluster-scan alert-intake service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
   cp .github/skills/$s/SKILL.md ~/.copilot/skills/$s/
 done
 ```
@@ -193,7 +230,7 @@ done
 **Windows (PowerShell):**
 ```powershell
 Copy-Item .github\agents\devops-troubleshooter.agent.md "$env:USERPROFILE\.copilot\agents\"
-foreach ($s in @("k8s-incident","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
+foreach ($s in @("k8s-incident","kube-context","clarify","token-thrift","cluster-scan","alert-intake","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
     Copy-Item ".github\skills\$s\SKILL.md" "$env:USERPROFILE\.copilot\skills\$s\"
 }
 ```
@@ -206,7 +243,7 @@ Reload your VS Code window to pick up changes.
 ```bash
 rm -f ~/.copilot/agents/devops-troubleshooter.agent.md
 rm -f ~/.copilot/agents/devops-remediator.agent.md
-for s in k8s-incident service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
+for s in k8s-incident kube-context clarify token-thrift cluster-scan alert-intake service-path ingress-tls change-correlation gitops saturation rca helm-drift db-evidence observability incident-memory; do
   rm -rf ~/.copilot/skills/$s
 done
 ```
@@ -215,7 +252,7 @@ done
 ```powershell
 Remove-Item "$env:USERPROFILE\.copilot\agents\devops-troubleshooter.agent.md" -ErrorAction SilentlyContinue
 Remove-Item "$env:USERPROFILE\.copilot\agents\devops-remediator.agent.md" -ErrorAction SilentlyContinue
-foreach ($s in @("k8s-incident","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
+foreach ($s in @("k8s-incident","kube-context","clarify","token-thrift","cluster-scan","alert-intake","service-path","ingress-tls","change-correlation","gitops","saturation","rca","helm-drift","db-evidence","observability","incident-memory")) {
     Remove-Item -Recurse -Force "$env:USERPROFILE\.copilot\skills\$s" -ErrorAction SilentlyContinue
 }
 ```

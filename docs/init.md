@@ -8,6 +8,7 @@ Run this **first** in a new clone. You can still call `setup.sh` / `setup.ps1`
 directly if you only want binaries.
 
 Platform notes: [macos.md](macos.md) · [windows.md](windows.md).
+Several kubeconfigs: [clusters.md](clusters.md).
 
 ## Quick start
 
@@ -86,6 +87,18 @@ Limit which IDE configs are written:
 .\scripts\init.ps1 -Ide cli
 ```
 
+Several kubeconfig files (merged; pick a context in chat after):
+
+```bash
+./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
+```
+
+```powershell
+.\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
+```
+
+Writes `KUBECONFIG` into `.vscode/mcp.env`. Restart **kubernetes-inspect**. See [user-install.md](user-install.md#managing-multiple-clusters).
+
 Behind a proxy, pass the same flags as setup:
 
 ```bash
@@ -104,7 +117,8 @@ Behind a proxy, pass the same flags as setup:
 | Current session | Env: `CURSOR_TRACE_ID` / `CURSOR_AGENT` → Cursor; `VSCODE_PID` / `TERM_PROGRAM=vscode` → VS Code; `JETBRAINS_IDE` → JetBrains |
 | Installed IDEs | CLIs on PATH (`code`, `cursor`, `copilot`, `claude`, JetBrains) plus workspace markers (`.vscode`, `.cursor`, `.idea`, `*.sln`) |
 | Agent harness | Mapped from IDEs + `~/.copilot` + Agent Host hints in `.vscode/settings.json` |
-| Cluster tools | kubeconfig path, `helm`, `kubectl` |
+| Cluster tools | kubeconfig path (supports `:` / `;` lists), `helm`, `kubectl` |
+| Kube contexts | `kubectl config get-contexts` when kubectl is on PATH (`kube_contexts`, `kube_current_context` in the report) |
 | Observability | `--with-observability` / `-WithObservability` or `GRAFANA_URL` already in `.vscode/mcp.env` |
 
 A JSON report is written to `.devops-troubleshooter-init.json` (gitignored).
@@ -139,16 +153,18 @@ they are machine-specific. A portable template lives at
 
 Init also copies `.vscode/mcp.env.example` → `.vscode/mcp.env` when missing,
 and calls `setup.sh` / `setup.ps1` if the Kubernetes MCP binary is not in `bin/`.
+`--kubeconfig` / `-Kubeconfig` upserts `KUBECONFIG=` in `.vscode/mcp.env`.
 
 ## After init
 
 1. Start **kubernetes-inspect** in your IDE (VS Code: Command Palette → **MCP: List Servers**).
-2. Open Agent mode and choose **DevOps Troubleshooter**.
-3. Install **Helm** on PATH if you want `helm history` in RCAs:
+2. Open Agent mode and choose **DevOps Troubleshooter** (or `/investigate` / `/use-cluster`).
+3. If you have several contexts, pick one in chat. The agent will **ask** if the name is ambiguous. See [clusters.md](clusters.md).
+4. Install **Helm** on PATH if you want `helm history` in RCAs:
    - macOS: `brew install helm`
    - Windows: `winget install Helm.Helm`
    - Linux: see [helm.sh](https://helm.sh/docs/intro/install/)
-4. Merge database servers only if you need SQL evidence:
+5. Merge database servers only if you need SQL evidence:
    - macOS/Linux binary: `.vscode/mcp.databases.binary.json` (after `./scripts/setup.sh --db-only`)
    - macOS/Linux npx: `.vscode/mcp.databases.json`
    - Windows binary: `.vscode/mcp.databases.windows.json`

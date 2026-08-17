@@ -4,7 +4,7 @@ This kit is first-class on **macOS** (Apple Silicon and Intel) and **Linux**.
 Use the bash scripts. Windows: [windows.md](windows.md).
 
 Product: **identify issues and recommend** — never apply cluster changes.
-Day-to-day: [user-guide.md](user-guide.md).
+Day-to-day: [user-guide.md](user-guide.md). Several clusters: [clusters.md](clusters.md).
 
 ## 1. Prerequisites
 
@@ -23,7 +23,15 @@ brew install uv
 Linux: install `kubectl`, `helm`, and `kind` from your distro or upstream binaries.
 `scripts/setup.sh` supports `linux/amd64` and `linux/arm64`.
 
-Kubeconfig default: `~/.kube/config` (override with `KUBECONFIG` in `.vscode/mcp.env`).
+Kubeconfig default: `~/.kube/config`. Several files: `KUBECONFIG=file1:file2:file3` in `.vscode/mcp.env`, then restart **kubernetes-inspect**.
+
+```bash
+./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
+```
+
+The agent lists contexts and you pick one (`/use-cluster`). If the name is
+ambiguous it **asks**. Do not run `kubectl config use-context` — it passes
+`context=` per call. Full guide: [clusters.md](clusters.md).
 
 ## 2. Init
 
@@ -48,7 +56,7 @@ copy an amd64 binary from a CI amd64 runner).
 
 1. Open this folder.
 2. Start **kubernetes-inspect** (**MCP: List Servers**). Trust it.
-3. Agent mode → **DevOps Troubleshooter**.
+3. Agent mode → **DevOps Troubleshooter**, or `/investigate` / `/use-cluster` / `/clarify`.
 4. Chat: `Ctrl+Cmd+I` (VS Code on Mac).
 
 Cursor uses `.cursor/mcp.json` (`mcpServers`) written by init when Cursor is detected.

@@ -8,7 +8,8 @@ or Copilot CLI) with read-only Kubernetes MCP. You do not need to know MCP tool
 names — the agent does.
 
 For install and harness detection, see [init.md](init.md). For VS Code Copilot
-specifics, see [copilot-vscode.md](copilot-vscode.md). macOS: [macos.md](macos.md).
+specifics, see [copilot-vscode.md](copilot-vscode.md). Several clusters:
+[clusters.md](clusters.md). Token use: [token-use.md](token-use.md). macOS: [macos.md](macos.md).
 Windows: [windows.md](windows.md).
 
 ## 1. First-time setup (once)
@@ -29,14 +30,24 @@ Then:
 1. Open this folder (or an app repo you copied `.github/` + MCP config into).
 2. Start **kubernetes-inspect** (VS Code: Command Palette → **MCP: List Servers**). Trust it.
 3. Open chat in **Agent** mode (not Ask).
-4. Choose **DevOps Troubleshooter**.
+4. Choose **DevOps Troubleshooter**, or type `/` and pick a prompt:
+   `investigate`, `scan-namespace`, `from-alert`, `use-cluster`, `clarify`.
 
 If Kubernetes tools never appear, the MCP server is not started or not trusted.
 Ask mode cannot call tools. Cloud Copilot on github.com cannot use your laptop kubeconfig.
 
 ## 2. How to ask
 
-Give **impact + where**, not a Kubernetes object name.
+Give **impact + where**, not a Kubernetes object name. Copilot also ships slash
+prompts in `.github/prompts/`:
+
+| Prompt | Use |
+|--------|-----|
+| `/investigate` | Named incident → full RCA |
+| `/scan-namespace` | “Something is wrong in ns X” → findings table, then RCA |
+| `/from-alert` | Paste Alertmanager / Grafana / PagerDuty JSON |
+| `/use-cluster` | Several kube contexts or kubeconfig files — pick first |
+| `/clarify` | Vague prompt — agent lists options and waits |
 
 **Good**
 
@@ -44,13 +55,19 @@ Give **impact + where**, not a Kubernetes object name.
 - `payments-api looks up but we get 502s from the ingress.`
 - `Pods in ns auth keep restarting. Context is kind-dto-e2e.`
 
-**Weak** (the agent can still work, but you lose timeline)
+**Weak** (the agent should **ask**, not guess)
 
-- `why is this pod crashlooping`
-- `fix prod`
+- `why is this pod crashlooping` → which cluster, namespace, pod?
+- `fix prod` → which of the `*prod*` contexts, which namespace?
 
-Confirm context and namespace when the agent lists kube contexts. Wrong cluster
-is the most common false RCA.
+If cluster, namespace, or workload is missing or matches more than one object,
+the agent lists **numbered choices** and waits. That is intentional. Wrong
+cluster is the most common false RCA.
+
+Optional gaps (when it started, user impact): one question, then it continues
+with **unknown start** / inferred symptom if you skip.
+
+Full cluster / kubeconfig guide: [clusters.md](clusters.md).
 
 ## 3. What a good RCA looks like
 
@@ -62,9 +79,11 @@ The troubleshooter must follow the `rca` skill. You should see:
 | **Timeline** | Deploy / image / first Warning event / your report |
 | **What we checked** | Pods, events, previous logs, spec, Service/Endpoints, Helm, chart — and gaps |
 | **Hypotheses** | 2–4, each kept or rejected with evidence |
+| **Evidence ledger** | Each causal claim → tool + object + quote (uncited claims are dropped) |
 | **Root cause** | Class + cause + confidence. CrashLoopBackOff is not a cause |
 | **Blast radius** | What else is healthy |
 | **Recommendations** | What would address the cause (chart, TLS, quota, git). Not executed. Restart = mitigation |
+| **Proposed change** | Unified diff against the workspace chart when the cause is in git. Never committed. |
 
 **Running ≠ Ready ≠ reachable.** If the app is “down” but pods are Running, the
 agent should inspect Service selectors and Endpoints, not only container logs.
@@ -79,14 +98,15 @@ You: `payments-api in namespace dto-e2e is down.`
 Agent should:
 
 1. Read `.github/memory/INDEX.md` (past incidents).
-2. List kube contexts; you confirm.
-3. List **all** pods (not only `!=Running`), Warning events.
-4. Classify Crash / Not Ready / Unreachable.
-5. Pull current **and previous** logs if restart count > 0.
-6. Get Deployment, Service, Endpoints.
-7. If a host/URL is involved: Ingress backend + TLS secret (`ingress-tls`).
-8. `helm history` / git / `gh` for what changed (`change-correlation`).
-9. Write the RCA with hypotheses, a timeline, and **recommendations** (not executed).
+2. If cluster/namespace is missing or `dto-e2e` is not unique, **ask** (`clarify`) with numbered options.
+3. List kube contexts; you pick one (`kube-context`). Later calls pass `context=`.
+4. List **all** pods (not only `!=Running`), Warning events. If you named no workload, `cluster-scan` first.
+5. Classify Crash / Not Ready / Unreachable.
+6. Pull current **and previous** logs if restart count > 0.
+7. Get Deployment, Service, Endpoints.
+8. If a host/URL is involved: Ingress backend + TLS secret (`ingress-tls`).
+9. `helm history --kube-context …` / git / `gh` for what changed (`change-correlation`).
+10. Write the RCA: hypotheses, timeline, **evidence ledger**, recommendations, **proposed git diff** (not executed).
 
 You may save to memory. The agent does not apply cluster changes.
 
@@ -95,6 +115,11 @@ You may save to memory. The agent does not apply cluster changes.
 | Skill | When |
 |-------|------|
 | `rca` | Every investigation (required write-up) |
+| `token-thrift` | INDEX-only memory, tail=80 logs, at most two evidence skills |
+| `clarify` | Missing or ambiguous cluster / namespace / workload — numbered questions |
+| `kube-context` | Several clusters/files — list contexts, you pick |
+| `cluster-scan` | Namespace health table before diving into one pod |
+| `alert-intake` | Pasted Prometheus / Grafana / PagerDuty alert |
 | `k8s-incident` | CrashLoop, ImagePull, OOM, probes, Pending |
 | `service-path` | 502s, Running but not Ready, empty Endpoints |
 | `ingress-tls` | Public URL / HTTPS: wrong backend Service, missing or expired cert |
@@ -112,6 +137,7 @@ Optional MCP: copy **one** `db-*` server from `.vscode/mcp.databases.json` (macO
 and set `GRAFANA_URL` + `GRAFANA_SERVICE_ACCOUNT_TOKEN` in `.vscode/mcp.env`.
 
 Start only the servers you need. Copilot has a **128 tools per request** cap.
+Token budget: [token-use.md](token-use.md) (`token-thrift` skill).
 
 ## 6. Incident memory
 
@@ -134,6 +160,11 @@ The last RCA section is **Recommendations**. Examples:
 | Quota 3/3 pods | Raise quota or free a replica **in git/policy** | Restart existing pods |
 
 Restart, if mentioned, is labeled **mitigation** and must say what stays broken.
+
+When the cause is in this repo, the RCA also includes **Proposed change**: a
+unified diff against the chart/values. The agent never `git commit`s or
+`gh pr create`s. If the fix is a cert or cluster quota outside git, it says
+**no repo patch**.
 
 ## 8. Demo cluster (e2e fixtures)
 
@@ -164,6 +195,9 @@ checks that kubectl (and the Kubernetes MCP server, if downloaded) can see them.
 | `pending-quota` | ResourceQuota `tiny` already 3/3 pods — replica cannot schedule |
 
 Then in Copilot: `Something is wrong in namespace dto-e2e. Investigate all workloads.`
+If you have several kube contexts, pick `kind-dto-e2e` when the agent lists them
+(`/use-cluster`). A vague `fix prod` should get clarifying questions, not a scan
+of the wrong cluster.
 
 Tear down:
 
@@ -192,7 +226,10 @@ powershell -ExecutionPolicy Bypass -File .\tests\kit.ps1
 | MCP start fails (TLS) | [proxy-ssl.md](proxy-ssl.md); prefer binaries from `init` over npx |
 | Windows `npx` spawn error | Use `init.ps1` / `.exe`, or `mcp.npx.windows.json` (`npx.cmd`) |
 | Apple Silicon `Bad CPU type` | Re-run `./scripts/setup.sh --k8s-only` on the Mac (need `darwin/arm64`) |
-| Wrong cluster | Step 1: confirm context from `configuration_contexts_list` |
+| Agent asks instead of investigating | Intended when cluster/namespace/workload is ambiguous. Answer with a number. [clusters.md](clusters.md) |
+| Wrong cluster | Step 1 / `/use-cluster`: pick from the context list; do not `kubectl config use-context` |
+| Several kubeconfig files | Merge with `KUBECONFIG=a:b` (Unix) or `a;b` (Windows), restart kubernetes-inspect. [clusters.md](clusters.md) |
+| Agent dumps huge YAML / values | It should summarize. See [token-use.md](token-use.md). Ask it to follow `token-thrift`. |
 | 128-tool cap | Disable unused MCP servers (do not enable all DBs + Grafana at once) |
 
 ## 10. Security reminders

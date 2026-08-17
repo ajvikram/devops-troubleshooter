@@ -172,3 +172,5 @@ The Kubernetes MCP server uses your kubeconfig. It does not need the corporate C
 1. Copilot Chat replies to "hello" in Agent mode.
 2. **MCP: List Servers** → `kubernetes-inspect` is Running (not a TLS error in **Show Output**).
 3. In DevOps Troubleshooter: "list my kube contexts" returns names, not a certificate error.
+   If several names appear, pick one (`/use-cluster`). The agent should **ask**, not guess.
+   See [clusters.md](clusters.md).

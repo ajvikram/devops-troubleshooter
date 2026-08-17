@@ -19,6 +19,7 @@ param(
     [string]$Ide = "",
     [string]$Proxy = "",
     [string]$CaCert = "",
+    [string]$Kubeconfig = "",
     [switch]$Help
 )
 
@@ -37,6 +38,7 @@ Discover platform, IDEs, and agent harnesses, then write MCP configs.
   -WithDatabases        Download mcp-toolbox (still pick engines via prompt or -Mcp)
   -Proxy URL            HTTP proxy for binary download
   -CaCert PEM           Corporate CA for binary download
+  -Kubeconfig PATHS     KUBECONFIG for MCP (one file, or semicolon-separated files)
 "@
     exit 0
 }
@@ -123,8 +125,39 @@ if ((Test-Path $settings) -and (Select-String -Path $settings -Pattern "agentHos
 }
 if (Test-Path "$env:USERPROFILE\.copilot") { $harness += "copilot-user-profile" }
 
-$kubeconfig = $env:KUBECONFIG
+$kubeconfig = $Kubeconfig
+if (-not $kubeconfig) { $kubeconfig = $env:KUBECONFIG }
 if (-not $kubeconfig) { $kubeconfig = Join-Path $env:USERPROFILE ".kube\config" }
+
+function Test-KubeconfigSpec($spec) {
+    if ([string]::IsNullOrWhiteSpace($spec)) { return $false }
+    foreach ($part in ($spec -split ';')) {
+        $p = $part.Trim()
+        if ($p -and (Test-Path -LiteralPath $p)) { return $true }
+    }
+    return $false
+}
+
+$kubeconfigExists = Test-KubeconfigSpec $kubeconfig
+$kubeContexts = @()
+$kubeCurrent = ""
+if (Test-Cmd "kubectl") {
+    $savedKube = $env:KUBECONFIG
+    $env:KUBECONFIG = $kubeconfig
+    try {
+        $kubeCurrent = (kubectl config current-context 2>$null | Out-String).Trim()
+        $kubeContexts = @(kubectl config get-contexts -o name 2>$null | Where-Object { $_.Trim() })
+    } catch {
+        $kubeCurrent = ""
+        $kubeContexts = @()
+    } finally {
+        if ($null -eq $savedKube -or $savedKube -eq "") {
+            Remove-Item Env:\KUBECONFIG -ErrorAction SilentlyContinue
+        } else {
+            $env:KUBECONFIG = $savedKube
+        }
+    }
+}
 
 $grafana = $WithObservability
 $envFile = Join-Path $VsCodeDir "mcp.env"
@@ -139,7 +172,9 @@ $report = [ordered]@{
     ides = ($ides -join ",")
     harness = ($harness -join ",")
     kubeconfig = $kubeconfig
-    kubeconfig_exists = (Test-Path $kubeconfig)
+    kubeconfig_exists = $kubeconfigExists
+    kube_contexts = $kubeContexts
+    kube_current_context = $kubeCurrent
     helm = (Test-Cmd "helm")
     kubectl = (Test-Cmd "kubectl")
     uvx = (Test-Cmd "uvx")
@@ -156,7 +191,11 @@ Write-Host "  platform:   $os/$arch"
 Write-Host "  session:    $session"
 Write-Host "  IDEs:       $($ides -join ', ')"
 Write-Host "  harness:    $($harness -join ', ')"
-Write-Host "  kubeconfig: $kubeconfig $(if (Test-Path $kubeconfig) { '[found]' } else { '[missing]' })"
+Write-Host "  kubeconfig: $kubeconfig $(if ($kubeconfigExists) { '[found]' } else { '[missing]' })"
+if ($kubeContexts.Count -gt 0) {
+    Write-Host "  contexts:   $($kubeContexts -join ', ')"
+    Write-Host "  current:    $(if ($kubeCurrent) { $kubeCurrent } else { 'none' })"
+}
 Write-Host "  helm:       $(Test-Cmd 'helm')   kubectl: $(Test-Cmd 'kubectl')"
 Write-Host ""
 
@@ -174,6 +213,18 @@ if ($CaCert) { $setupArgs.CaCert = $CaCert }
 
 if (-not (Test-Path $envFile) -and (Test-Path (Join-Path $VsCodeDir "mcp.env.example"))) {
     Copy-Item (Join-Path $VsCodeDir "mcp.env.example") $envFile
+}
+
+if ($Kubeconfig) {
+    if (-not (Test-Path $envFile) -and (Test-Path (Join-Path $VsCodeDir "mcp.env.example"))) {
+        Copy-Item (Join-Path $VsCodeDir "mcp.env.example") $envFile
+    }
+    if (Test-Path $envFile) {
+        $lines = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#?\s*KUBECONFIG=' }
+        $lines += "KUBECONFIG=$kubeconfig"
+        Write-Utf8NoBom $envFile ($lines -join "`n")
+        Write-Host "Wrote KUBECONFIG to .vscode\mcp.env (restart kubernetes-inspect after init)"
+    }
 }
 
 function Test-McpEnv($name) {
@@ -458,8 +509,9 @@ if (-not (Test-Cmd "helm")) {
     Write-Host "Warning: helm.exe not on PATH. helm history / helm get values will not work until you install Helm."
     Write-Host "  winget install Helm.Helm   or   choco install kubernetes-helm"
 }
-if (-not (Test-Path $kubeconfig)) {
+if (-not $kubeconfigExists) {
     Write-Host "Warning: kubeconfig not found at $kubeconfig"
+    Write-Host "  Multiple files: KUBECONFIG=file1;file2;file3  (Unix: file1:file2)"
 }
 
 Write-Host ""

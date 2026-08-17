@@ -12,10 +12,15 @@ Finding the issue is the product. Do not jump to a single cause from the first
 red log line. Do not recommend actions until the RCA cause is written. Never apply
 changes — **recommendations** only.
 
-This skill is mandatory for the DevOps Troubleshooter. Other skills (`k8s-incident`,
-`saturation`, `service-path`, `ingress-tls`, `change-correlation`, `gitops`,
-`helm-drift`, `db-evidence`, `observability`) are how you gather evidence. This
-skill is how you turn evidence into a cause.
+This skill is mandatory for the DevOps Troubleshooter together with **`token-thrift`**
+(small tool results, INDEX-only memory). Other skills (`clarify`, `kube-context`,
+`cluster-scan`, `alert-intake`, `k8s-incident`, `saturation`, `service-path`,
+`ingress-tls`, `change-correlation`, `gitops`, `helm-drift`, `db-evidence`,
+`observability`) are how you gather evidence — open **at most two** of those after
+you classify. This skill is how you turn evidence into a cause.
+
+If the user prompt is too thin to name a cluster, namespace, or symptom, follow
+**`clarify` before** this write-up. Do not invent those fields in the RCA.
 
 ## 1. Frame the symptom (user, not object)
 
@@ -25,7 +30,8 @@ Write one sentence the user would recognize:
 - Good: "Checkout payments fail; the API pods keep restarting in `staging`."
 
 If the user gave only a pod name, still restate impact: who is broken, which
-env, since when (if known).
+env, since when (if known). If impact, env, and time are all missing, follow
+**`clarify`** (optional questions) — then infer and mark **inferred** if they skip.
 
 ## 2. Classify the failure mode
 
@@ -80,8 +86,10 @@ A root cause is ready when:
 2. **Likely alternatives are ruled out** (or marked still-open with why you stopped).
 3. You can point at the **trigger** (deploy, config change, traffic, node pressure, dependency) when the data supports it.
 
-If two causes remain plausible, say so. Split **contributing factors** from **root cause**
-(e.g. root cause = memory limit 256Mi; contributing = traffic spike).
+If two causes remain plausible, say so. Follow **`clarify`**: ask which user flow
+is broken, or keep both and mark the RCA **undetermined**. Split **contributing
+factors** from **root cause** (e.g. root cause = memory limit 256Mi; contributing
+= traffic spike).
 
 Confidence:
 
@@ -96,7 +104,7 @@ Never invent cluster state. If MCP failed, that is a gap, not a cause.
 Present exactly these sections:
 
 ### Symptom
-User-facing impact + environment (context / namespace).
+User-facing impact + environment (**kube context** / namespace). Never omit the cluster name when more than one context exists.
 
 ### Timeline
 Bullet timestamps. Or "start time unknown."
@@ -107,9 +115,20 @@ Short list of objects (pods, events, deployment, service/endpoints, helm, chart,
 ### Hypotheses
 Table or bullets: kept / rejected, with evidence.
 
+### Evidence ledger
+Required. One row per causal claim (inspired by KubeAstra's synthesis critic).
+If a sentence in Root cause cannot be traced to a row, drop or downgrade it.
+
+| ID | Claim | Source (tool + object) | Quote / field |
+|----|-------|------------------------|---------------|
+| E1 | … | `pods_log` `crashloop-…` previous | `CONFIG_ERROR: missing PAYMENTS_DSN` |
+| E2 | … | Service `mismatch` vs pods | selector `app=payments` vs label `app=payments-api` |
+
 ### Root cause
 One paragraph. Name the class. Confidence high/medium/low.
-If unknown, say **undetermined** and list the single best next check.
+Cite ledger IDs (`E1`, `E2`). If unknown, say **undetermined** and list the single best next check.
+
+**Critic pass (before you send):** every causal clause in Root cause maps to a ledger row. Metrics without a spec/log/event stay contributing, not the cause.
 
 ### Blast radius
 Which replicas, namespaces, and user flows are affected. What is still healthy.
@@ -131,6 +150,28 @@ Rules:
 - Order by how directly they remove the cause, then by blast radius (smallest first).
 - No `kubectl apply`, Helm rollback, or secret writes from this agent.
 
+### Proposed change
+When the cause lives in the workspace (chart, values, Ingress, quota YAML), add a
+**unified diff** the human could commit. Borrowed from k8s-mechanic / HolmesGPT
+"open a PR" — except you **only draft**. Never `git commit`, `git push`, or
+`gh pr create`.
+
+```diff
+--- a/charts/payments/templates/deployment.yaml
++++ b/charts/payments/templates/deployment.yaml
+@@ envFrom / env:
+-            - name: PAYMENTS_DSN
+-              value: ""
++            - name: PAYMENTS_DSN
++              valueFrom:
++                secretKeyRef:
++                  name: payments-db
++                  key: dsn
+```
+
+If the fix is outside the repo (rotate a cert, raise a cluster quota in another
+system), write **no repo patch** and say where a human would change it.
+
 ## 7. What you must never do
 
 - Declare a root cause from a single log line with no timeline or ruled-out alternatives.
@@ -138,3 +179,4 @@ Rules:
 - Recommend restart as the RCA. Restart is a mitigation, not a cause, and usually not the recommendation that removes the cause.
 - Skip Service/Endpoints because pods are `Running` (Running ≠ Ready ≠ reachable).
 - Dump raw tool output as the RCA. Quote the few lines that prove the cause.
+- Put more than **eight** rows in the evidence ledger, or paste a full Helm values file.

@@ -3,7 +3,8 @@
 This kit is first-class on Windows. Use **PowerShell** (Windows PowerShell 5.1 or PowerShell 7). Do not use Command Prompt for setup.
 
 Product: **identify issues and recommend** — never apply cluster changes.
-Day-to-day: [user-guide.md](user-guide.md). macOS: [macos.md](macos.md).
+Day-to-day: [user-guide.md](user-guide.md). Several clusters: [clusters.md](clusters.md).
+macOS: [macos.md](macos.md).
 
 ## 1. Run init (recommended)
 
@@ -15,9 +16,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
 
 Init discovers OS, IDE, and harness, **asks which MCP servers to download**, downloads binaries if needed, and writes
 `.mcp.json` plus `.vscode\mcp.json` with `.exe` paths to **kubernetes-inspect**
-(read-only). ```powershell
+(read-only).
+
+```powershell
 .\scripts\init.ps1 -Mcp grafana,postgres,mongodb
 .\scripts\init.ps1 -Yes
+.\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
 ```
 
 Discovery only:
@@ -60,13 +64,17 @@ Behind a corporate proxy:
 1. File → Open Folder → this repo (or your app repo with `.github` + `.vscode` copied in).
 2. Install the recommended extensions (**GitHub Copilot**, **GitHub Copilot Chat**).
 3. Command Palette → **MCP: List Servers** → start **kubernetes-inspect**. Trust it.
-4. Copilot Chat (`Ctrl+Alt+I`) → **Agent** mode → **DevOps Troubleshooter**.
+4. Copilot Chat (`Ctrl+Alt+I`) → **Agent** mode → **DevOps Troubleshooter**, or `/investigate` / `/use-cluster` / `/clarify`.
 
-Kubeconfig default on Windows is `%USERPROFILE%\.kube\config`. Override in `.vscode\mcp.env`:
+Kubeconfig default on Windows is `%USERPROFILE%\.kube\config`. Several files — **semicolon** (not colon):
 
 ```
-KUBECONFIG=C:\Users\you\.kube\config
+KUBECONFIG=C:\Users\you\.kube\config;C:\Users\you\.kube\staging.config
 ```
+
+Restart **kubernetes-inspect** after editing `mcp.env`. In chat, pick a context (`/use-cluster`).
+The agent **asks** if `staging`/`prod` matches more than one name. It must not run
+`kubectl config use-context`. Details: [clusters.md](clusters.md).
 
 ## 3. If you insist on npx (Node.js)
 

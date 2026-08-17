@@ -21,8 +21,16 @@ $required = @(
   "docs/macos.md",
   "docs/windows.md",
   "docs/init.md",
+  "docs/clusters.md",
+  "docs/token-use.md",
   ".github/agents/devops-troubleshooter.agent.md",
   ".github/skills/rca/SKILL.md",
+  ".github/skills/cluster-scan/SKILL.md",
+  ".github/skills/alert-intake/SKILL.md",
+  ".github/skills/kube-context/SKILL.md",
+  ".github/skills/clarify/SKILL.md",
+  ".github/skills/token-thrift/SKILL.md",
+  ".github/prompts/investigate.prompt.md",
   ".github/skills/change-correlation/SKILL.md",
   ".github/skills/ingress-tls/SKILL.md",
   "scripts/init.ps1",
@@ -59,6 +67,11 @@ if ($t -match 'name: DevOps Troubleshooter') { Ok "troubleshooter name" } else {
 if ($t -match 'target: vscode') { Bad "agents lock target: vscode" } else { Ok "portable agents" }
 if ($t -match 'Apply Remediations') { Bad "troubleshooter still hands off remediations" } else { Ok "no remediations handoff" }
 if ($t -match 'Recommendations') { Ok "troubleshooter mentions recommendations" } else { Bad "missing recommendations" }
+if ($t -match 'kube-context') { Ok "troubleshooter kube-context skill" } else { Bad "missing kube-context" }
+if ($t -match 'config use-context') { Ok "forbids kubectl use-context" } else { Bad "missing use-context ban" }
+if ($t -match 'Ask when insufficient or ambiguous') { Ok "asks when ambiguous" } else { Bad "missing clarify principle" }
+if ($t -match 'token-thrift') { Ok "token-thrift" } else { Bad "missing token-thrift" }
+if ($t -match 'INDEX-only') { Ok "INDEX-only memory" } else { Bad "missing INDEX-only memory" }
 
 $defaults = @(
   ".vscode/mcp.json",
@@ -74,6 +87,8 @@ foreach ($f in $defaults) {
 
 $rca = Get-Content ".github/skills/rca/SKILL.md" -Raw
 if ($rca -match '### Recommendations') { Ok "rca Recommendations section" } else { Bad "rca missing Recommendations" }
+if ($rca -match '### Evidence ledger') { Ok "rca Evidence ledger" } else { Bad "rca missing Evidence ledger" }
+if ($rca -match '### Proposed change') { Ok "rca Proposed change" } else { Bad "rca missing Proposed change" }
 
 $inspect = Get-Content ".vscode/mcp.binary.windows.json" -Raw | ConvertFrom-Json
 $args = $inspect.servers.'kubernetes-inspect'.args -join ' '

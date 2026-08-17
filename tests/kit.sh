@@ -25,9 +25,21 @@ required=(
   docs/images/rca-flow.png
   docs/proxy-ssl.md
   docs/user-install.md
+  docs/clusters.md
+  docs/token-use.md
   .github/agents/devops-troubleshooter.agent.md
   .github/agents/devops-remediator.agent.md
   .github/skills/rca/SKILL.md
+  .github/skills/cluster-scan/SKILL.md
+  .github/skills/alert-intake/SKILL.md
+  .github/skills/kube-context/SKILL.md
+  .github/skills/clarify/SKILL.md
+  .github/skills/token-thrift/SKILL.md
+  .github/prompts/investigate.prompt.md
+  .github/prompts/scan-namespace.prompt.md
+  .github/prompts/from-alert.prompt.md
+  .github/prompts/use-cluster.prompt.md
+  .github/prompts/clarify.prompt.md
   .github/skills/k8s-incident/SKILL.md
   .github/skills/service-path/SKILL.md
   .github/skills/ingress-tls/SKILL.md
@@ -72,6 +84,7 @@ json_files=(
   .vscode/mcp.grafana.json
   .vscode/mcp.remediate.json
   .vscode/mcp.remediate.windows.json
+  .vscode/mcp.multi-cluster.example.json
   .mcp.json.example
   .vscode/extensions.json
 )
@@ -137,10 +150,12 @@ if grep -q 'Apply Remediations' .github/agents/devops-troubleshooter.agent.md; t
 else
   ok "troubleshooter has no remediations handoff"
 fi
-if grep -q '### Recommendations' .github/skills/rca/SKILL.md; then
-  ok "rca skill requires Recommendations"
+if grep -q '### Recommendations' .github/skills/rca/SKILL.md \
+  && grep -q '### Evidence ledger' .github/skills/rca/SKILL.md \
+  && grep -q '### Proposed change' .github/skills/rca/SKILL.md; then
+  ok "rca skill requires Recommendations, Evidence ledger, Proposed change"
 else
-  bad "rca skill missing Recommendations section"
+  bad "rca skill missing Recommendations / Evidence ledger / Proposed change"
 fi
 if grep -q -- '- execute' .github/agents/devops-troubleshooter.agent.md \
   && grep -q 'helm history' .github/agents/devops-troubleshooter.agent.md \
@@ -149,11 +164,39 @@ if grep -q -- '- execute' .github/agents/devops-troubleshooter.agent.md \
 else
   bad "troubleshooter missing allowlisted read-only execute"
 fi
+if grep -q 'Ask when insufficient or ambiguous' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'Blocking' .github/skills/clarify/SKILL.md \
+  && grep -q 'Numbered options' .github/skills/clarify/SKILL.md; then
+  ok "clarify skill asks on insufficient or ambiguous input"
+else
+  bad "missing clarify / ask-when-ambiguous behavior"
+fi
+if grep -q 'token-thrift' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'INDEX-only' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'tail=80' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'at most two' .github/skills/token-thrift/SKILL.md; then
+  ok "token-thrift: INDEX-only memory, tail=80, skill budget"
+else
+  bad "missing token-thrift / cheap memory / log tail budget"
+fi
+if grep -q 'kube-context' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'context: <picked>' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'config use-context' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q -- '--kube-context' .github/skills/change-correlation/SKILL.md \
+  && grep -q 'Never call `configuration_view`' .github/skills/kube-context/SKILL.md; then
+  ok "kube-context pick is per-call, not kubectl use-context"
+else
+  bad "missing kube-context pin / helm --kube-context / configuration_view ban"
+fi
 if grep -q 'change-correlation' .github/agents/devops-troubleshooter.agent.md \
   && grep -q 'ingress-tls' .github/agents/devops-troubleshooter.agent.md \
   && grep -q 'saturation' .github/agents/devops-troubleshooter.agent.md \
-  && grep -q 'gitops' .github/agents/devops-troubleshooter.agent.md; then
-  ok "troubleshooter uses identification skills including gitops and saturation"
+  && grep -q 'gitops' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'cluster-scan' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'alert-intake' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'kube-context' .github/agents/devops-troubleshooter.agent.md \
+  && grep -q 'clarify' .github/agents/devops-troubleshooter.agent.md; then
+  ok "troubleshooter uses identification skills including gitops, saturation, cluster-scan"
 else
   bad "troubleshooter missing identification skills"
 fi
@@ -203,6 +246,11 @@ if grep -q -- '--mcp' scripts/init.sh && grep -q -- '-Mcp' scripts/init.ps1 \
 else
   bad "init missing MCP picker prompt"
 fi
+if grep -q -- '--kubeconfig' scripts/init.sh && grep -q '\$Kubeconfig' scripts/init.ps1; then
+  ok "init accepts --kubeconfig / -Kubeconfig"
+else
+  bad "init missing --kubeconfig / -Kubeconfig"
+fi
 if grep -q -- '--k8s-only' scripts/init.sh && grep -q -- '-K8sOnly' scripts/init.ps1; then
   ok "init downloads kubernetes-mcp-server only by default"
 else
@@ -229,6 +277,11 @@ if ./scripts/init.sh --discover-only >/tmp/dto-init-out.txt; then
     ok "init report has platform"
   else
     bad "init report missing os"
+  fi
+  if grep -q 'kube_contexts' .devops-troubleshooter-init.json; then
+    ok "init report lists kube_contexts"
+  else
+    bad "init report missing kube_contexts"
   fi
 else
   bad "init.sh --discover-only failed"
