@@ -67,6 +67,8 @@ KUBECONFIG=/Users/you/.kube/config:/Users/you/.kube/staging.config:/Users/you/.k
 
 ```bash
 ./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
+# global: writes KUBECONFIG into ~/.local/share/devops-troubleshooter/mcp.env
+./scripts/init.sh --scope global --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
 ```
 
 **Windows** — **semicolon** (drive letters already use `:`):
@@ -77,9 +79,12 @@ KUBECONFIG=C:\Users\you\.kube\config;C:\Users\you\.kube\staging.config
 
 ```powershell
 .\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
+.\scripts\init.ps1 -Scope global -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
 ```
 
-Init writes `KUBECONFIG` into `.vscode/mcp.env`. Then pick a context in chat.
+Init writes `KUBECONFIG` into `.vscode/mcp.env` (workspace) or the global `mcp.env`
+(`~/.local/share/devops-troubleshooter/mcp.env`, Windows `%LOCALAPPDATA%\devops-troubleshooter\mcp.env`).
+Then pick a context in chat.
 
 ## Isolated MCP servers (prod must not mix with staging)
 

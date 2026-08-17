@@ -24,15 +24,17 @@ hypotheses, a timeline, and **recommendations**. Restart is a mitigation, not a 
 **Start here:** [User guide](docs/user-guide.md) · [Clusters](docs/clusters.md) · [Token use](docs/token-use.md) · [Init](docs/init.md) · [macOS](docs/macos.md) · [Windows](docs/windows.md)
 
 ```bash
-./scripts/init.sh                          # asks which MCPs to download
+./scripts/init.sh                          # asks workspace vs global, then which MCPs
+./scripts/init.sh --scope global           # every workspace (~/.copilot + user MCP)
+./scripts/init.sh --scope workspace --yes
 ./scripts/init.sh --mcp grafana,postgres,mongodb
 ./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
-./scripts/init.sh --yes
 ./tests/e2e.sh                             # kind cluster with planted RCA fixtures
 ```
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1 -Scope global
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1 -Mcp grafana,mongodb
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
 ```
@@ -98,8 +100,8 @@ Windows amd64 and arm64 are both supported. Use PowerShell on Windows, not `cmd.
 
 ## Quick start
 
-1. macOS/Linux: `./scripts/init.sh`. Windows: `.\scripts\init.ps1`. Discovers IDE/harness, **asks which MCPs to install**, and writes MCP config.
-2. Start **kubernetes-inspect** (VS Code: **MCP: List Servers**). Trust it.
+1. macOS/Linux: `./scripts/init.sh`. Windows: `.\scripts\init.ps1`. Discovers IDE/harness, **asks workspace vs global**, then which MCPs to install, and writes MCP config. Pick **global** if you want the agent in every repo.
+2. Start **kubernetes-inspect** (VS Code: **MCP: List Servers**). Trust it. After a global install, reload the window.
 3. Agent mode → **DevOps Troubleshooter**, or `/investigate` / `/scan-namespace` / `/from-alert` / `/use-cluster` / `/clarify`.
 4. Prompt: `Checkout is failing in staging, namespace payments, after the 14:00 deploy.`
 
@@ -215,7 +217,7 @@ CI runs kit tests on Ubuntu, macOS, and Windows, plus the kind cluster job on Ub
 | [Windows](docs/windows.md) | PowerShell, `.exe`, `npx.cmd` |
 | [Copilot + VS Code](docs/copilot-vscode.md) | Agent mode, MCP, optional DB/Grafana |
 | [Proxy / SSL](docs/proxy-ssl.md) | Corporate intercepting proxies |
-| [User-level install](docs/user-install.md) | `~/.copilot` for every workspace |
+| [User-level / global](docs/user-install.md) | `init --scope global` — `~/.copilot` for every workspace |
 
 ## Layout
 
@@ -230,7 +232,7 @@ deploy/                  rbac-troubleshooter-view.yaml (read-only SA)
 .vscode/mcp.*.json       Binary / Windows / DB / Grafana / optional remediator variants
 .vscode/mcp.env.example  Template — copy to mcp.env (gitignored)
 .vscode/mcp.multi-cluster.example.json  Optional: one MCP server per kubeconfig file
-scripts/init.sh|.ps1     Discover OS, IDE, harness; ask which MCPs; write config
+scripts/init.sh|.ps1     Discover OS, IDE, harness; ask workspace vs global + MCPs; write config
 scripts/setup.sh|.ps1    Download MCP binaries only
 tests/                   kit.sh + kit.ps1, e2e.sh + e2e.ps1, kind fixtures
 docs/                    user-guide, clusters, token-use, init, macos, windows, …
@@ -238,7 +240,7 @@ docs/images/             README diagrams
 LICENSE                  MIT
 ```
 
-`init` writes machine-specific files that **must not** be committed: `.mcp.json`, `.cursor/mcp.json`, `.github/mcp.json`, `.vscode/mcp.env`, `.devops-troubleshooter-init.json`, and `bin/`. The committed default is `.vscode/mcp.json` (npx, inspect-only) plus `.mcp.json.example`.
+`init --scope workspace` writes machine-specific files that **must not** be committed: `.mcp.json`, `.cursor/mcp.json`, `.github/mcp.json`, `.vscode/mcp.env`, `.devops-troubleshooter-init.json`, and `bin/`. `init --scope global` writes `~/.copilot` plus `~/.local/share/devops-troubleshooter` (Windows: `%LOCALAPPDATA%\devops-troubleshooter`) instead. The committed default is `.vscode/mcp.json` (npx, inspect-only) plus `.mcp.json.example`.
 
 Npx without binaries (Node 18+): keep `.vscode/mcp.json` as committed. On Windows copy `.vscode/mcp.npx.windows.json` over it (`npx.cmd`).
 
@@ -247,7 +249,7 @@ Npx without binaries (Node 18+): keep `.vscode/mcp.json` as committed. On Window
 - Troubleshooter: read-only Kubernetes (`--read-only`). No `pods_exec`. Recommendations only — never apply.
 - Prefer a `view` kubeconfig. Apply [deploy/rbac-troubleshooter-view.yaml](deploy/rbac-troubleshooter-view.yaml) for a read-only ServiceAccount. DB users: SELECT / read-only. Mongo: `--readOnly`.
 - Grafana MCP (optional): `--disable-write`, Prometheus + Loki tools only.
-- Do not commit `.vscode/mcp.env` (gitignored). Copy it from `mcp.env.example`. Agents redact secrets in output.
+- Do not commit `.vscode/mcp.env` (gitignored). Copy it from `mcp.env.example`. Global scope uses `~/.local/share/devops-troubleshooter/mcp.env` (Windows: `%LOCALAPPDATA%\devops-troubleshooter\mcp.env`). Agents redact secrets in output.
 
 ## MCP servers
 
@@ -275,7 +277,7 @@ Do not enable every server at once. The leftover remediator agent is not wired; 
 - Automated e2e proves kubectl + MCP can **see** the fixtures. It does not invoke Copilot to write the RCA — do that in Agent mode against `dto-e2e`.
 - `gitops` needs Argo CD / Flux CRDs in the cluster. kind fixtures do not install them.
 - Helm history uses the **Helm CLI** on PATH via allowlisted `execute` (MCP Helm has no `helm_history`).
-- There is no `--install-into` other repos; copy `.github/` + MCP config, or use [user-level install](docs/user-install.md).
+- To use the kit in every repo, run `./scripts/init.sh --scope global` (Windows: `-Scope global`). Workspace init still writes this clone only.
 - Cluster e2e CI runs on Ubuntu. Windows/macOS CI runs kit contract tests.
 
 ## License

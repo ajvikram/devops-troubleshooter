@@ -20,9 +20,24 @@ Several kubeconfigs: [clusters.md](clusters.md).
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
 ```
 
-On a terminal, init **asks which MCP servers to download and wire**. `kubernetes-inspect` is always installed. Optional: Grafana, Postgres, MySQL, Oracle, SQL Server, SQLite, ClickHouse, Elasticsearch, Neo4j, Snowflake, MongoDB.
+On a terminal, init **asks workspace vs global**, then which MCP servers to download and wire. `kubernetes-inspect` is always installed. Optional: Grafana, Postgres, MySQL, Oracle, SQL Server, SQLite, ClickHouse, Elasticsearch, Neo4j, Snowflake, MongoDB.
 
-Non-interactive (CI, scripts, empty Enter = keep pre-selected):
+| Scope | Where it lands |
+|-------|----------------|
+| **workspace** (default for `--yes` / CI) | This repo: `.vscode/mcp.json`, `.mcp.json`, `.github/agents` already in git |
+| **global** | Every workspace: `~/.copilot` agents/skills/prompts + user MCP. Binaries and `mcp.env` under `~/.local/share/devops-troubleshooter` (Windows: `%LOCALAPPDATA%\devops-troubleshooter`) |
+
+```bash
+./scripts/init.sh --scope global
+./scripts/init.sh --scope workspace --yes
+```
+
+```powershell
+.\scripts\init.ps1 -Scope global
+.\scripts\init.ps1 -Scope workspace -Yes
+```
+
+Non-interactive (CI, scripts, empty Enter = keep pre-selected). `--yes` / `-Yes` skips both prompts and uses **workspace**:
 
 ```bash
 ./scripts/init.sh --yes
@@ -54,7 +69,7 @@ Optional Prometheus + Loki via Grafana:
 .\scripts\init.ps1 -WithObservability
 ```
 
-Then set `GRAFANA_URL` and `GRAFANA_SERVICE_ACCOUNT_TOKEN` in `.vscode/mcp.env`.
+Then set `GRAFANA_URL` and `GRAFANA_SERVICE_ACCOUNT_TOKEN` in `.vscode/mcp.env` (workspace) or the global `mcp.env`.
 Requires [`uv`](https://docs.astral.sh/uv/) (`uvx` on PATH). macOS: `brew install uv`.
 `uvx` downloads `mcp-grafana` on first start — no separate binary.
 
@@ -97,7 +112,7 @@ Several kubeconfig files (merged; pick a context in chat after):
 .\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
 ```
 
-Writes `KUBECONFIG` into `.vscode/mcp.env`. Restart **kubernetes-inspect**. See [user-install.md](user-install.md#managing-multiple-clusters).
+Writes `KUBECONFIG` into `.vscode/mcp.env` (workspace) or the global `mcp.env`. Restart **kubernetes-inspect**. See [user-install.md](user-install.md#managing-multiple-clusters).
 
 Behind a proxy, pass the same flags as setup:
 
@@ -119,7 +134,8 @@ Behind a proxy, pass the same flags as setup:
 | Agent harness | Mapped from IDEs + `~/.copilot` + Agent Host hints in `.vscode/settings.json` |
 | Cluster tools | kubeconfig path (supports `:` / `;` lists), `helm`, `kubectl` |
 | Kube contexts | `kubectl config get-contexts` when kubectl is on PATH (`kube_contexts`, `kube_current_context` in the report) |
-| Observability | `--with-observability` / `-WithObservability` or `GRAFANA_URL` already in `.vscode/mcp.env` |
+| Observability | `--with-observability` / `-WithObservability` or `GRAFANA_URL` already in `mcp.env` |
+| Scope | `--scope workspace\|global` / `-Scope`; TTY prompt otherwise |
 
 A JSON report is written to `.devops-troubleshooter-init.json` (gitignored).
 
@@ -138,26 +154,43 @@ A JSON report is written to `.devops-troubleshooter-init.json` (gitignored).
 
 ## What it writes
 
+### Workspace (`--scope workspace`)
+
 | File | Schema | Used by |
 |------|--------|---------|
 | `.mcp.json` | Copilot `servers` | Copilot CLI, Agent Host, Visual Studio, JetBrains workspace |
 | `.vscode/mcp.json` | Copilot `servers` | VS Code Copilot Chat |
 | `.github/mcp.json` | Copilot `servers` | JetBrains Copilot (workspace) |
 | `.cursor/mcp.json` | Cursor `mcpServers` | Cursor |
-| `~/.copilot/mcp-config.json` | Copilot `servers` | Copilot CLI / user MCP — **only if the file does not already exist** |
+| `~/.copilot/mcp-config.json` | Copilot `servers` | Copilot CLI — **only if the file does not already exist** |
 
-Generated files use **absolute** paths to `bin/kubernetes-mcp-server` (`.exe` on
-Windows) and include **kubernetes-inspect only** (read-only). Do not commit them;
-they are machine-specific. A portable template lives at
+Generated MCP files use **absolute** paths to this clone’s `bin/kubernetes-mcp-server` (`.exe` on
+Windows). Do not commit them. A portable template lives at
 [`.mcp.json.example`](../.mcp.json.example).
 
-Init also copies `.vscode/mcp.env.example` → `.vscode/mcp.env` when missing,
+Init copies `.vscode/mcp.env.example` → `.vscode/mcp.env` when missing,
 and calls `setup.sh` / `setup.ps1` if the Kubernetes MCP binary is not in `bin/`.
-`--kubeconfig` / `-Kubeconfig` upserts `KUBECONFIG=` in `.vscode/mcp.env`.
+`--kubeconfig` / `-Kubeconfig` upserts `KUBECONFIG=` in that `mcp.env`.
+
+### Global (`--scope global`)
+
+Does **not** write workspace `.mcp.json` / `.vscode/mcp.json` (avoids two `kubernetes-inspect` servers).
+
+| Path | What |
+|------|------|
+| `~/.copilot/agents/devops-troubleshooter.agent.md` | Agent (remediator is not copied) |
+| `~/.copilot/skills/*/SKILL.md` | All identification skills |
+| `~/.copilot/prompts/*.prompt.md` | `/investigate` and the other slash prompts |
+| `~/.copilot/mcp-config.json` | User MCP — **merges** `kubernetes-inspect` (and any DBs you picked) |
+| VS Code **User** `mcp.json` | Same servers, merged, if VS Code is detected |
+| `~/.cursor/mcp.json` + `~/.cursor/skills/` | If Cursor is detected |
+| `~/.local/share/devops-troubleshooter/` (Windows `%LOCALAPPDATA%\devops-troubleshooter`) | MCP binaries + `mcp.env` so other repos do not depend on this clone |
+
+Reload the IDE window after a global install. Details: [user-install.md](user-install.md).
 
 ## After init
 
-1. Start **kubernetes-inspect** in your IDE (VS Code: Command Palette → **MCP: List Servers**).
+1. Start **kubernetes-inspect** in your IDE (VS Code: Command Palette → **MCP: List Servers**). After a **global** install, reload the window and open any workspace.
 2. Open Agent mode and choose **DevOps Troubleshooter** (or `/investigate` / `/use-cluster`).
 3. If you have several contexts, pick one in chat. The agent will **ask** if the name is ambiguous. See [clusters.md](clusters.md).
 4. Install **Helm** on PATH if you want `helm history` in RCAs:

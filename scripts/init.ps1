@@ -20,6 +20,7 @@ param(
     [string]$Proxy = "",
     [string]$CaCert = "",
     [string]$Kubeconfig = "",
+    [string]$Scope = "",
     [switch]$Help
 )
 
@@ -30,10 +31,13 @@ Usage: .\scripts\init.ps1 [options]
 Discover platform, IDEs, and agent harnesses, then write MCP configs.
 
   -DiscoverOnly         Print discovery report only (no downloads, no writes)
+  -Scope workspace|global
+                        workspace = this repo only (default for -Yes / CI)
+                        global    = every workspace (%USERPROFILE%\.copilot + user MCP)
   -Ide vscode,cursor,cli  Limit config writes (aliases: vs, cli, jb, claude)
   -Mcp grafana,postgres,mongodb
                           Non-interactive MCP pick. Always includes kubernetes.
-  -Yes                  Skip the MCP prompt (kubernetes only, plus -Mcp / -With* / mcp.env)
+  -Yes                  Skip scope + MCP prompts (workspace, kubernetes only, plus -Mcp / -With* / mcp.env)
   -WithObservability    Add Grafana MCP (same as including grafana in -Mcp)
   -WithDatabases        Download mcp-toolbox (still pick engines via prompt or -Mcp)
   -Proxy URL            HTTP proxy for binary download
@@ -50,6 +54,20 @@ $VsCodeDir = Join-Path $RootDir ".vscode"
 $Report = Join-Path $RootDir ".devops-troubleshooter-init.json"
 $K8sBin = Join-Path $BinDir "kubernetes-mcp-server.exe"
 $ToolboxBin = Join-Path $BinDir "toolbox.exe"
+$GlobalRoot = if ($env:DTO_HOME) { $env:DTO_HOME } else { Join-Path $env:LOCALAPPDATA "devops-troubleshooter" }
+$CopilotUser = Join-Path $env:USERPROFILE ".copilot"
+$CursorUser = Join-Path $env:USERPROFILE ".cursor"
+$VsCodeUserMcp = Join-Path $env:APPDATA "Code\User\mcp.json"
+
+function Normalize-Scope($name) {
+    switch -Regex ([string]$name) {
+        '^(workspace|repo|local)$' { return "workspace" }
+        '^(global|user|profile)$' { return "global" }
+        '^$' { return "" }
+        default { throw "Unknown -Scope: $name (use workspace or global)" }
+    }
+}
+$Scope = Normalize-Scope $Scope
 
 function Test-Cmd($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
@@ -168,6 +186,8 @@ if (Test-Path $envFile) {
 $report = [ordered]@{
     platform = @{ os = $os; arch = $arch }
     workspace = $RootDir
+    scope = $(if ($Scope) { $Scope } else { "workspace" })
+    global_root = $GlobalRoot
     session = $session
     ides = ($ides -join ",")
     harness = ($harness -join ",")
@@ -206,24 +226,68 @@ if ($DiscoverOnly) {
     exit 0
 }
 
+function Resolve-Scope {
+    if ($script:Scope) {
+        Write-Host "Install scope: $($script:Scope) (-Scope)"
+        return
+    }
+    $nonInteractive = $Yes -or $env:GITHUB_ACTIONS -or $env:CI
+    try { if ([Console]::IsInputRedirected) { $nonInteractive = $true } } catch { }
+    if ($nonInteractive) {
+        $script:Scope = "workspace"
+        Write-Host "Install scope: workspace (non-interactive default)"
+        return
+    }
+    Write-Host ""
+    Write-Host "Install scope:"
+    Write-Host "  1) workspace — this repo only (.vscode\mcp.json, .github\agents)"
+    Write-Host "  2) global    — every workspace ($env:USERPROFILE\.copilot + user MCP)"
+    Write-Host ""
+    $ans = Read-Host "Scope [workspace]"
+    switch -Regex ($ans.Trim().ToLowerInvariant()) {
+        '^(2|g|global|user|profile)$' { $script:Scope = "global" }
+        default { $script:Scope = "workspace" }
+    }
+    Write-Host "Install scope: $($script:Scope)"
+}
+
+Resolve-Scope
+$report.scope = $Scope
+Write-Utf8NoBom $Report ($report | ConvertTo-Json -Depth 5)
+
 $setup = Join-Path $RootDir "scripts\setup.ps1"
 $setupArgs = @{ }
 if ($Proxy) { $setupArgs.Proxy = $Proxy }
 if ($CaCert) { $setupArgs.CaCert = $CaCert }
 
-if (-not (Test-Path $envFile) -and (Test-Path (Join-Path $VsCodeDir "mcp.env.example"))) {
-    Copy-Item (Join-Path $VsCodeDir "mcp.env.example") $envFile
+$exampleEnv = Join-Path $VsCodeDir "mcp.env.example"
+if ($Scope -eq "global") {
+    if (-not (Test-Path $GlobalRoot)) {
+        New-Item -ItemType Directory -Force -Path $GlobalRoot | Out-Null
+    }
+    $envFile = Join-Path $GlobalRoot "mcp.env"
+    if (-not (Test-Path $envFile)) {
+        if (Test-Path (Join-Path $VsCodeDir "mcp.env")) {
+            Copy-Item (Join-Path $VsCodeDir "mcp.env") $envFile
+        } elseif (Test-Path $exampleEnv) {
+            Copy-Item $exampleEnv $envFile
+        }
+    }
+} else {
+    if (-not (Test-Path $envFile) -and (Test-Path $exampleEnv)) {
+        Copy-Item $exampleEnv $envFile
+    }
 }
 
 if ($Kubeconfig) {
-    if (-not (Test-Path $envFile) -and (Test-Path (Join-Path $VsCodeDir "mcp.env.example"))) {
-        Copy-Item (Join-Path $VsCodeDir "mcp.env.example") $envFile
+    if (-not (Test-Path $envFile) -and (Test-Path $exampleEnv)) {
+        Copy-Item $exampleEnv $envFile
     }
     if (Test-Path $envFile) {
         $lines = Get-Content $envFile | Where-Object { $_ -notmatch '^\s*#?\s*KUBECONFIG=' }
         $lines += "KUBECONFIG=$kubeconfig"
         Write-Utf8NoBom $envFile ($lines -join "`n")
-        Write-Host "Wrote KUBECONFIG to .vscode\mcp.env (restart kubernetes-inspect after init)"
+        Write-Host "Wrote KUBECONFIG to $envFile (restart kubernetes-inspect after init)"
     }
 }
 
@@ -297,7 +361,7 @@ if ($Mcp) {
 } else {
     Write-Host ""
     Write-Host "Choose optional MCP servers to download and wire. kubernetes-inspect is always installed."
-    Write-Host "  [*] = already selected from flags or .vscode\mcp.env"
+    Write-Host "  [*] = already selected from flags or mcp.env"
     Write-Host ""
     Write-Host ("  {0}  1) grafana         Prometheus + Loki via Grafana (uvx)" -f (Flag $wantGrafana))
     Write-Host ("  {0}  2) postgres" -f (Flag $wantPg))
@@ -351,15 +415,29 @@ if ($WithDatabases -or $wantToolbox) {
     }
 }
 
+$K8sUse = $K8sBin
+$ToolboxUse = $ToolboxBin
+if ($Scope -eq "global") {
+    $shareBin = Join-Path $GlobalRoot "bin"
+    New-Item -ItemType Directory -Force -Path $shareBin | Out-Null
+    Copy-Item $K8sBin (Join-Path $shareBin "kubernetes-mcp-server.exe") -Force
+    $K8sUse = Join-Path $shareBin "kubernetes-mcp-server.exe"
+    if (Test-Path $ToolboxBin) {
+        Copy-Item $ToolboxBin (Join-Path $shareBin "toolbox.exe") -Force
+        $ToolboxUse = Join-Path $shareBin "toolbox.exe"
+    }
+    Write-Host "Installed MCP binaries under $shareBin"
+}
+
 $envFileJson = $envFile.Replace('\', '\\')
-$k8sJson = $K8sBin.Replace('\', '\\')
+$k8sJson = $K8sUse.Replace('\', '\\')
 $grafanaArgs = '["mcp-grafana", "--disable-write", "--enabled-tools", "datasource,prometheus,loki"]'
 
 $dbCmd = "npx.cmd"
 $dbArgsPrefix = '["-y", "@toolbox-sdk/server", "--prebuilt='
 $dbArgsSuffix = '", "--stdio"]'
-if (Test-Path $ToolboxBin) {
-    $dbCmd = $ToolboxBin.Replace('\', '\\')
+if (Test-Path $ToolboxUse) {
+    $dbCmd = $ToolboxUse.Replace('\', '\\')
     $dbArgsPrefix = '["--prebuilt='
     $dbArgsSuffix = '", "--stdio"]'
 }
@@ -398,17 +476,17 @@ if ($wantMongo) {
     }
 "@
 }
-if ($wantPg -and -not (Test-McpEnv "POSTGRES_HOST")) { Write-Host "  Reminder: set POSTGRES_HOST in .vscode\mcp.env" }
-if ($wantMy -and -not (Test-McpEnv "MYSQL_HOST")) { Write-Host "  Reminder: set MYSQL_HOST in .vscode\mcp.env" }
-if ($wantOr -and -not (Test-McpEnv "ORACLE_CONNECTION_STRING")) { Write-Host "  Reminder: set ORACLE_CONNECTION_STRING in .vscode\mcp.env" }
-if ($wantMs -and -not (Test-McpEnv "MSSQL_HOST")) { Write-Host "  Reminder: set MSSQL_HOST in .vscode\mcp.env" }
-if ($wantSqlite -and -not (Test-McpEnv "SQLITE_DATABASE")) { Write-Host "  Reminder: set SQLITE_DATABASE in .vscode\mcp.env" }
-if ($wantCh -and -not (Test-McpEnv "CLICKHOUSE_HOST")) { Write-Host "  Reminder: set CLICKHOUSE_HOST in .vscode\mcp.env" }
-if ($wantEs -and -not (Test-McpEnv "ELASTICSEARCH_HOST")) { Write-Host "  Reminder: set ELASTICSEARCH_HOST in .vscode\mcp.env" }
-if ($wantNeo -and -not (Test-McpEnv "NEO4J_URI")) { Write-Host "  Reminder: set NEO4J_URI in .vscode\mcp.env" }
-if ($wantSf -and -not (Test-McpEnv "SNOWFLAKE_ACCOUNT")) { Write-Host "  Reminder: set SNOWFLAKE_ACCOUNT in .vscode\mcp.env" }
-if ($wantMongo -and -not (Test-McpEnv "MDB_MCP_CONNECTION_STRING")) { Write-Host "  Reminder: set MDB_MCP_CONNECTION_STRING in .vscode\mcp.env" }
-if ($wantGrafana -and -not (Test-McpEnv "GRAFANA_URL")) { Write-Host "  Reminder: set GRAFANA_URL and GRAFANA_SERVICE_ACCOUNT_TOKEN in .vscode\mcp.env" }
+if ($wantPg -and -not (Test-McpEnv "POSTGRES_HOST")) { Write-Host "  Reminder: set POSTGRES_HOST in $envFile" }
+if ($wantMy -and -not (Test-McpEnv "MYSQL_HOST")) { Write-Host "  Reminder: set MYSQL_HOST in $envFile" }
+if ($wantOr -and -not (Test-McpEnv "ORACLE_CONNECTION_STRING")) { Write-Host "  Reminder: set ORACLE_CONNECTION_STRING in $envFile" }
+if ($wantMs -and -not (Test-McpEnv "MSSQL_HOST")) { Write-Host "  Reminder: set MSSQL_HOST in $envFile" }
+if ($wantSqlite -and -not (Test-McpEnv "SQLITE_DATABASE")) { Write-Host "  Reminder: set SQLITE_DATABASE in $envFile" }
+if ($wantCh -and -not (Test-McpEnv "CLICKHOUSE_HOST")) { Write-Host "  Reminder: set CLICKHOUSE_HOST in $envFile" }
+if ($wantEs -and -not (Test-McpEnv "ELASTICSEARCH_HOST")) { Write-Host "  Reminder: set ELASTICSEARCH_HOST in $envFile" }
+if ($wantNeo -and -not (Test-McpEnv "NEO4J_URI")) { Write-Host "  Reminder: set NEO4J_URI in $envFile" }
+if ($wantSf -and -not (Test-McpEnv "SNOWFLAKE_ACCOUNT")) { Write-Host "  Reminder: set SNOWFLAKE_ACCOUNT in $envFile" }
+if ($wantMongo -and -not (Test-McpEnv "MDB_MCP_CONNECTION_STRING")) { Write-Host "  Reminder: set MDB_MCP_CONNECTION_STRING in $envFile" }
+if ($wantGrafana -and -not (Test-McpEnv "GRAFANA_URL")) { Write-Host "  Reminder: set GRAFANA_URL and GRAFANA_SERVICE_ACCOUNT_TOKEN in $envFile" }
 if ($wantMongo) { Write-Host "  MongoDB package downloads via npx.cmd the first time you start db-mongodb." }
 if ($wantGrafana) { Write-Host "  Grafana package downloads via uvx the first time you start grafana." }
 
@@ -444,31 +522,7 @@ function Write-CopilotMcp($dest) {
 "@
 }
 
-function Want-Ide($name) {
-    if (-not $Ide) {
-        return ($ides -contains $name)
-    }
-    foreach ($part in $Ide.Split(",")) {
-        if ((Normalize-Ide $part) -eq $name) { return $true }
-    }
-    return $false
-}
-
-Write-CopilotMcp (Join-Path $RootDir ".mcp.json")
-Write-Host "Wrote .mcp.json (Copilot CLI, Agent Host, Visual Studio, JetBrains workspace)"
-
-if ((Want-Ide "vscode") -or (-not $Ide)) {
-    Write-CopilotMcp (Join-Path $VsCodeDir "mcp.json")
-    Write-Host "Wrote .vscode\mcp.json"
-}
-
-if ((Want-Ide "jetbrains") -or (Test-Path (Join-Path $RootDir ".idea"))) {
-    Write-CopilotMcp (Join-Path $RootDir ".github\mcp.json")
-    Write-Host "Wrote .github\mcp.json (JetBrains Copilot workspace MCP)"
-}
-
-if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path (Join-Path $RootDir ".cursor"))) {
-    $cursorDir = Join-Path $RootDir ".cursor"
+function Write-CursorMcp($dest) {
     $kubeJson = $kubeconfig.Replace('\', '\\')
     $g = ""
     if ($grafanaBlock) {
@@ -480,7 +534,7 @@ if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path (Join-Path $R
     }
 "@
     }
-    Write-Utf8NoBom (Join-Path $cursorDir "mcp.json") @"
+    Write-Utf8NoBom $dest @"
 {
   "mcpServers": {
     "kubernetes-inspect": {
@@ -491,16 +545,129 @@ if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path (Join-Path $R
   }
 }
 "@
-    Write-Host "Wrote .cursor\mcp.json (Cursor mcpServers format)"
 }
 
-$copilotUser = Join-Path $env:USERPROFILE ".copilot\mcp-config.json"
-if ((Want-Ide "copilot-cli") -or ((-not $Ide) -and (Test-Cmd "copilot"))) {
-    if (-not (Test-Path $copilotUser)) {
-        Write-CopilotMcp $copilotUser
-        Write-Host "Wrote $copilotUser"
-    } else {
-        Write-Host "Left existing $copilotUser unchanged"
+function Merge-McpJson($dest, $key, $srcPath) {
+    $new = Get-Content -Raw $srcPath | ConvertFrom-Json
+    $incoming = $new.$key
+    if (-not $incoming) { $incoming = $new.servers }
+    if (-not $incoming) { $incoming = $new.mcpServers }
+    $old = $null
+    if (Test-Path $dest) {
+        try { $old = Get-Content -Raw $dest | ConvertFrom-Json } catch { $old = $null }
+    }
+    $targetKey = $key
+    if ($old -and -not $old.PSObject.Properties[$key] -and $old.PSObject.Properties["mcpServers"] -and -not $old.PSObject.Properties["servers"]) {
+        $targetKey = "mcpServers"
+    }
+    $merged = [ordered]@{}
+    if ($old) {
+        foreach ($p in $old.PSObject.Properties) {
+            if ($p.Name -ne $targetKey) { $merged[$p.Name] = $p.Value }
+        }
+    }
+    $servers = [ordered]@{}
+    if ($old -and $old.PSObject.Properties[$targetKey] -and $old.$targetKey) {
+        foreach ($p in $old.$targetKey.PSObject.Properties) { $servers[$p.Name] = $p.Value }
+    }
+    if ($incoming) {
+        foreach ($p in $incoming.PSObject.Properties) { $servers[$p.Name] = $p.Value }
+    }
+    $merged[$targetKey] = [pscustomobject]$servers
+    Write-Utf8NoBom $dest (($merged | ConvertTo-Json -Depth 8))
+}
+
+function Install-GlobalKitFiles {
+    $agentDir = Join-Path $CopilotUser "agents"
+    $skillRoot = Join-Path $CopilotUser "skills"
+    $promptDir = Join-Path $CopilotUser "prompts"
+    New-Item -ItemType Directory -Force -Path $agentDir, $skillRoot, $promptDir | Out-Null
+    Copy-Item (Join-Path $RootDir ".github\agents\devops-troubleshooter.agent.md") $agentDir -Force
+    Get-ChildItem (Join-Path $RootDir ".github\skills") -Directory | ForEach-Object {
+        $src = Join-Path $_.FullName "SKILL.md"
+        if (Test-Path $src) {
+            $destDir = Join-Path $skillRoot $_.Name
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            Copy-Item $src $destDir -Force
+        }
+    }
+    Get-ChildItem (Join-Path $RootDir ".github\prompts") -Filter "*.prompt.md" -ErrorAction SilentlyContinue | ForEach-Object {
+        Copy-Item $_.FullName $promptDir -Force
+    }
+    Write-Host "Copied agent, skills, and prompts to $CopilotUser"
+    if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path $CursorUser)) {
+        $cursorSkills = Join-Path $CursorUser "skills"
+        Get-ChildItem (Join-Path $RootDir ".github\skills") -Directory | ForEach-Object {
+            $src = Join-Path $_.FullName "SKILL.md"
+            if (Test-Path $src) {
+                $destDir = Join-Path $cursorSkills $_.Name
+                New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+                Copy-Item $src $destDir -Force
+            }
+        }
+        Write-Host "Copied skills to $cursorSkills"
+    }
+}
+
+function Want-Ide($name) {
+    if (-not $Ide) {
+        return ($ides -contains $name)
+    }
+    foreach ($part in $Ide.Split(",")) {
+        if ((Normalize-Ide $part) -eq $name) { return $true }
+    }
+    return $false
+}
+
+if ($Scope -eq "global") {
+    Install-GlobalKitFiles
+    $tmpMcp = Join-Path $env:TEMP "dto-mcp-$PID.json"
+    Write-CopilotMcp $tmpMcp
+    Merge-McpJson (Join-Path $CopilotUser "mcp-config.json") "servers" $tmpMcp
+    Write-Host "Wrote $(Join-Path $CopilotUser 'mcp-config.json')"
+    if ((Want-Ide "vscode") -or (-not $Ide)) {
+        $vsUserDir = Split-Path -Parent $VsCodeUserMcp
+        if ((Test-Path $vsUserDir) -or (Want-Ide "vscode")) {
+            Merge-McpJson $VsCodeUserMcp "servers" $tmpMcp
+            Write-Host "Wrote $VsCodeUserMcp"
+        }
+    }
+    Remove-Item $tmpMcp -ErrorAction SilentlyContinue
+    if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path $CursorUser)) {
+        $tmpCursor = Join-Path $env:TEMP "dto-cursor-mcp-$PID.json"
+        Write-CursorMcp $tmpCursor
+        Merge-McpJson (Join-Path $CursorUser "mcp.json") "mcpServers" $tmpCursor
+        Remove-Item $tmpCursor -ErrorAction SilentlyContinue
+        Write-Host "Wrote $(Join-Path $CursorUser 'mcp.json')"
+    }
+    Write-Host "Global install does not write workspace .mcp.json / .vscode\mcp.json"
+} else {
+    Write-CopilotMcp (Join-Path $RootDir ".mcp.json")
+    Write-Host "Wrote .mcp.json (Copilot CLI, Agent Host, Visual Studio, JetBrains workspace)"
+
+    if ((Want-Ide "vscode") -or (-not $Ide)) {
+        Write-CopilotMcp (Join-Path $VsCodeDir "mcp.json")
+        Write-Host "Wrote .vscode\mcp.json"
+    }
+
+    if ((Want-Ide "jetbrains") -or (Test-Path (Join-Path $RootDir ".idea"))) {
+        Write-CopilotMcp (Join-Path $RootDir ".github\mcp.json")
+        Write-Host "Wrote .github\mcp.json (JetBrains Copilot workspace MCP)"
+    }
+
+    if ((Want-Ide "cursor") -or ($session -eq "cursor") -or (Test-Path (Join-Path $RootDir ".cursor"))) {
+        Write-CursorMcp (Join-Path $RootDir ".cursor\mcp.json")
+        Write-Host "Wrote .cursor\mcp.json (Cursor mcpServers format)"
+    }
+
+    $copilotUserMcp = Join-Path $CopilotUser "mcp-config.json"
+    if ((Want-Ide "copilot-cli") -or ((-not $Ide) -and (Test-Cmd "copilot"))) {
+        if (-not (Test-Path $copilotUserMcp)) {
+            Write-CopilotMcp $copilotUserMcp
+            Write-Host "Wrote $copilotUserMcp"
+        } else {
+            Write-Host "Left existing $copilotUserMcp unchanged"
+        }
     }
 }
 
@@ -515,6 +682,11 @@ if (-not $kubeconfigExists) {
 }
 
 Write-Host ""
-Write-Host "Init complete. Report: $Report"
-Write-Host "Next: open Copilot/Cursor Agent mode and choose DevOps Troubleshooter."
-Write-Host "      MCP: start kubernetes-inspect (and grafana / db-* if enabled)."
+Write-Host "Init complete ($Scope). Report: $Report"
+if ($Scope -eq "global") {
+    Write-Host "Next: open any workspace → Copilot/Cursor Agent mode → DevOps Troubleshooter."
+    Write-Host "      Reload the window if the agent is missing. MCP: start kubernetes-inspect."
+} else {
+    Write-Host "Next: open this repo in Copilot/Cursor Agent mode and choose DevOps Troubleshooter."
+    Write-Host "      MCP: start kubernetes-inspect (and grafana / db-* if enabled)."
+}

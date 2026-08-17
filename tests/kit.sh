@@ -251,6 +251,13 @@ if grep -q -- '--kubeconfig' scripts/init.sh && grep -q '\$Kubeconfig' scripts/i
 else
   bad "init missing --kubeconfig / -Kubeconfig"
 fi
+if grep -q -- '--scope' scripts/init.sh && grep -q '\$Scope' scripts/init.ps1 \
+  && grep -q 'Install scope' scripts/init.sh && grep -q 'Install scope' scripts/init.ps1 \
+  && grep -q 'every workspace' scripts/init.sh && grep -q 'every workspace' scripts/init.ps1; then
+  ok "init asks workspace vs global"
+else
+  bad "init missing workspace vs global scope prompt"
+fi
 if grep -q -- '--k8s-only' scripts/init.sh && grep -q -- '-K8sOnly' scripts/init.ps1; then
   ok "init downloads kubernetes-mcp-server only by default"
 else
@@ -283,9 +290,47 @@ if ./scripts/init.sh --discover-only >/tmp/dto-init-out.txt; then
   else
     bad "init report missing kube_contexts"
   fi
+  if grep -q '"scope"' .devops-troubleshooter-init.json; then
+    ok "init report has scope"
+  else
+    bad "init report missing scope"
+  fi
 else
   bad "init.sh --discover-only failed"
   cat /tmp/dto-init-out.txt || true
+fi
+
+if ./scripts/init.sh --discover-only --scope global >/tmp/dto-init-scope.txt; then
+  if grep -q '"scope": "global"' .devops-troubleshooter-init.json; then
+    ok "init.sh --discover-only --scope global"
+  else
+    bad "init report did not record scope global"
+  fi
+else
+  bad "init.sh --discover-only --scope global failed"
+fi
+
+if [ -x bin/kubernetes-mcp-server ]; then
+  _dto_home="$(mktemp -d "${TMPDIR:-/tmp}/dto-global.XXXXXX")"
+  if HOME="$_dto_home" DTO_HOME="$_dto_home/share" ./scripts/init.sh --yes --scope global >/tmp/dto-init-global.txt; then
+    if [ -f "$_dto_home/.copilot/agents/devops-troubleshooter.agent.md" ] \
+      && [ -f "$_dto_home/.copilot/skills/rca/SKILL.md" ] \
+      && [ -f "$_dto_home/.copilot/prompts/investigate.prompt.md" ] \
+      && [ -f "$_dto_home/.copilot/mcp-config.json" ] \
+      && [ -x "$_dto_home/share/bin/kubernetes-mcp-server" ] \
+      && grep -q 'kubernetes-inspect' "$_dto_home/.copilot/mcp-config.json" \
+      && ! grep -q 'devops-remediator' "$_dto_home/.copilot/agents/"*; then
+      ok "init --scope global writes user profile (isolated HOME)"
+    else
+      bad "init --scope global missing user-profile files"
+    fi
+  else
+    bad "init.sh --yes --scope global failed"
+    cat /tmp/dto-init-global.txt || true
+  fi
+  rm -rf "$_dto_home"
+else
+  ok "init --scope global functional test skipped (no bin/kubernetes-mcp-server)"
 fi
 
 # --- fixtures mention expected RCA strings ---

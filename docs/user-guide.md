@@ -7,9 +7,10 @@ You run the **DevOps Troubleshooter** in a local agent (GitHub Copilot Chat, Cur
 or Copilot CLI) with read-only Kubernetes MCP. You do not need to know MCP tool
 names — the agent does.
 
-For install and harness detection, see [init.md](init.md). For VS Code Copilot
-specifics, see [copilot-vscode.md](copilot-vscode.md). Several clusters:
-[clusters.md](clusters.md). Token use: [token-use.md](token-use.md). macOS: [macos.md](macos.md).
+For install and harness detection, see [init.md](init.md). Global (every repo):
+[user-install.md](user-install.md). For VS Code Copilot specifics, see
+[copilot-vscode.md](copilot-vscode.md). Several clusters: [clusters.md](clusters.md).
+Token use: [token-use.md](token-use.md). macOS: [macos.md](macos.md).
 Windows: [windows.md](windows.md).
 
 ## 1. First-time setup (once)
@@ -22,12 +23,13 @@ Windows: [windows.md](windows.md).
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
 ```
 
-Init discovers your OS, IDE, and agent harness, **asks which MCP servers to
-download**, fetches those binaries, and writes MCP config.
+Init discovers your OS, IDE, and agent harness, **asks workspace vs global**,
+then which MCP servers to download, fetches those binaries, and writes MCP config.
+Use `--scope global` / `-Scope global` so the agent is available in every repo.
 
 Then:
 
-1. Open this folder (or an app repo you copied `.github/` + MCP config into).
+1. **Workspace** scope: open this folder (or copy `.github/` + MCP config into the app repo). **Global** scope: open any repo — the agent and user MCP come from `~/.copilot`. Reload the window once.
 2. Start **kubernetes-inspect** (VS Code: Command Palette → **MCP: List Servers**). Trust it.
 3. Open chat in **Agent** mode (not Ask).
 4. Choose **DevOps Troubleshooter**, or type `/` and pick a prompt:

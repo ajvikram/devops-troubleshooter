@@ -4,8 +4,21 @@ This guide sets up the DevOps Troubleshooter agent, skills, and MCP servers
 in your user profile so they are available in **every workspace** —
 no need to copy files into each repo.
 
+**Preferred:** from this clone, let init do it:
+
+```bash
+./scripts/init.sh --scope global
+```
+
+```powershell
+.\scripts\init.ps1 -Scope global
+```
+
+On a TTY, `./scripts/init.sh` (no flags) **asks** workspace vs global, then which MCPs.
+`--yes` / `-Yes` stays **workspace** so CI does not write to your home directory.
+
 Prefer workspace [init](init.md) when you only need this kit in one repo.
-Init can write `~/.copilot/mcp-config.json` if that file does not already exist.
+The rest of this page is the same layout if you want to copy files by hand.
 
 Primary usage is still **Copilot Chat → Agent mode**. See [copilot-vscode.md](copilot-vscode.md).
 Several kubeconfigs: [clusters.md](clusters.md).
@@ -59,9 +72,9 @@ foreach ($s in @("k8s-incident","kube-context","clarify","token-thrift","cluster
 Skills loaded from `~/.copilot/skills/` (or `%USERPROFILE%\.copilot\skills\`
 on Windows) are auto-discovered by Copilot in all workspaces.
 
-Slash prompts (`/investigate`, `/use-cluster`, `/clarify`, …) live in the
-**workspace** `.github/prompts/` folder. Copy that directory into each app repo
-you debug, or open this kit as the workspace. They are not loaded from `~/.copilot`.
+Slash prompts (`/investigate`, `/use-cluster`, `/clarify`, …) are copied to
+`~/.copilot/prompts/` on a global init. If your Copilot build only loads
+workspace prompts, also copy `.github/prompts/` into the app repo you debug.
 
 ## 3. Configure MCP servers (user level)
 
@@ -194,7 +207,7 @@ Point `KUBECONFIG` at **all** files, then restart **kubernetes-inspect**:
 Put that in `.vscode/mcp.env` (gitignored) or pass:
 
 ```bash
-./scripts/init.sh --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
+./scripts/init.sh --scope global --kubeconfig "$HOME/.kube/config:$HOME/.kube/prod.config"
 ```
 
 ```powershell
@@ -218,6 +231,8 @@ as in the other Windows JSON files.
 - **Oracle Instant Client.** Install Instant Client. Set `ORACLE_HOME`. On Linux use `LD_LIBRARY_PATH`; on macOS `DYLD_LIBRARY_PATH`; on Windows add the Instant Client folder to **PATH**.
 
 ## Updating
+
+Re-run `./scripts/init.sh --scope global` (Windows: `.\scripts\init.ps1 -Scope global`) from this clone. Or copy by hand:
 
 **macOS / Linux:**
 ```bash
@@ -257,5 +272,7 @@ foreach ($s in @("k8s-incident","kube-context","clarify","token-thrift","cluster
 }
 ```
 
+Also remove `~/.copilot/prompts/` (Windows: `%USERPROFILE%\.copilot\prompts`) and
+`~/.local/share/devops-troubleshooter` (Windows: `%LOCALAPPDATA%\devops-troubleshooter`).
 Remove the server entries from your user MCP configuration via
-`MCP: Open User Configuration`.
+`MCP: Open User Configuration` (and `~/.cursor/mcp.json` if Cursor was installed).

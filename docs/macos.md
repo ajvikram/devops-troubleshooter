@@ -37,13 +37,15 @@ ambiguous it **asks**. Do not run `kubectl config use-context` — it passes
 
 ```bash
 ./scripts/init.sh
-# asks which optional MCPs to download (grafana, postgres, mongodb, …)
+# asks workspace vs global, then which optional MCPs (grafana, postgres, mongodb, …)
+./scripts/init.sh --scope global
 ./scripts/init.sh --mcp grafana,postgres,mongodb
 ./scripts/init.sh --yes
 ```
 
-Init downloads `bin/kubernetes-mcp-server` for `darwin/arm64`, `darwin/amd64`,
+Workspace init downloads `bin/kubernetes-mcp-server` for `darwin/arm64`, `darwin/amd64`,
 or `linux/*`, and writes `.vscode/mcp.json` with that absolute path.
+Global init copies the binary to `~/.local/share/devops-troubleshooter/bin` and writes user MCP.
 Optional DBs: `./scripts/setup.sh --db-only` then copy only the `db-*` keys you need from `.vscode/mcp.databases.binary.json` (Postgres, MySQL, Oracle, SQL Server, SQLite, ClickHouse, Elasticsearch, Neo4j, Snowflake). MongoDB uses `npx mongodb-mcp-server --readOnly` (`MDB_MCP_CONNECTION_STRING`).
 On **linux/arm64**, toolbox has no binary — use `.vscode/mcp.databases.json` (npx).
 Optional Grafana: `./scripts/init.sh --with-observability` (`brew install uv`; `uvx` fetches `mcp-grafana`).
@@ -87,4 +89,4 @@ from git. Prefer binaries on corporate laptops.
 
 ## 7. User-level install
 
-Agents and skills can live in `~/.copilot/` for every workspace: [user-install.md](user-install.md).
+Agents and skills for every workspace: `./scripts/init.sh --scope global` ([user-install.md](user-install.md)).

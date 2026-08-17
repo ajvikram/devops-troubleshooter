@@ -19,23 +19,19 @@ macOS: [macos.md](macos.md). Windows: [windows.md](windows.md).
 
 ## First-run checklist
 
-1. From the repo root, run init (discovers OS / IDE / harness and writes MCP configs):
+1. From the repo root, run init (asks **workspace vs global**, then which MCPs):
    ```bash
    ./scripts/init.sh
+   ./scripts/init.sh --scope global    # every workspace
    ```
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
+   .\scripts\init.ps1 -Scope global
    ```
    Or `--discover-only` / `-DiscoverOnly` to inspect detection without writing. See [init.md](init.md).
-2. Open this folder as the VS Code workspace (or copy `.github/` and `.vscode/` into the app repo you are debugging).
-3. If `.vscode/mcp.env` is missing (init copies it when absent):
-   ```bash
-   cp .vscode/mcp.env.example .vscode/mcp.env
-   ```
-   ```powershell
-   Copy-Item .vscode\mcp.env.example .vscode\mcp.env
-   ```
-   On Windows, `init.ps1` (or `setup.ps1`) points `.vscode\mcp.json` at `bin\*.exe`. See [windows.md](windows.md).
+2. **Workspace:** open this folder (or copy `.github/` and `.vscode/` into the app repo). **Global:** open any folder; reload the window so **DevOps Troubleshooter** appears.
+3. Secrets live in `mcp.env` (gitignored). Workspace: `.vscode/mcp.env`. Global: `~/.local/share/devops-troubleshooter/mcp.env` (Windows: `%LOCALAPPDATA%\devops-troubleshooter\mcp.env`). Init copies the example when the file is missing.
+   On Windows workspace init, `init.ps1` points `.vscode\mcp.json` at `bin\*.exe`. See [windows.md](windows.md).
 4. Behind a corporate proxy, follow [proxy-ssl.md](proxy-ssl.md) **before** starting MCP servers.
 5. Command Palette → **MCP: List Servers** → start **kubernetes-inspect**.
    Trust the server when VS Code asks. If it fails, **Show Output** on that server.
@@ -73,7 +69,9 @@ If **Agent Host** is enabled, VS Code does **not** send `${input:...}` MCP confi
 
 This kit's default `.vscode/mcp.json` has **no** `${input:}` variables so it can be forwarded. Put kubeconfig, proxy, and DB secrets in `.vscode/mcp.env` or in the OS environment instead.
 
-Init writes workspace `.mcp.json` (and user `~/.copilot/mcp-config.json` if missing) in the Copilot `servers` schema. Cursor gets `.cursor/mcp.json` (`mcpServers`). JetBrains Copilot can use `.github/mcp.json`.
+Workspace init writes `.mcp.json` (and user `~/.copilot/mcp-config.json` if missing) in the Copilot `servers` schema. Cursor gets `.cursor/mcp.json` (`mcpServers`). JetBrains Copilot can use `.github/mcp.json`.
+
+`./scripts/init.sh --scope global` installs the agent, skills, prompts, and user MCP so **every** workspace sees **DevOps Troubleshooter**. Reload the window after that install.
 
 Cloud Copilot on github.com **cannot** use your laptop kubeconfig. This kit is local IDE first.
 

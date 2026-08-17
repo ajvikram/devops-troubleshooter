@@ -14,11 +14,12 @@ From the repo root:
 powershell -ExecutionPolicy Bypass -File .\scripts\init.ps1
 ```
 
-Init discovers OS, IDE, and harness, **asks which MCP servers to download**, downloads binaries if needed, and writes
-`.mcp.json` plus `.vscode\mcp.json` with `.exe` paths to **kubernetes-inspect**
-(read-only).
+Init discovers OS, IDE, and harness, **asks workspace vs global**, then which MCP servers to download.
+Workspace writes `.mcp.json` plus `.vscode\mcp.json` with `.exe` paths.
+Global (`-Scope global`) writes `%USERPROFILE%\.copilot` and `%LOCALAPPDATA%\devops-troubleshooter`.
 
 ```powershell
+.\scripts\init.ps1 -Scope global
 .\scripts\init.ps1 -Mcp grafana,postgres,mongodb
 .\scripts\init.ps1 -Yes
 .\scripts\init.ps1 -Kubeconfig "$env:USERPROFILE\.kube\config;$env:USERPROFILE\.kube\prod.config"
@@ -157,4 +158,4 @@ Do not change machine policy unless IT allows it.
 
 ## 9. User-level install
 
-Agents and skills go to `%USERPROFILE%\.copilot\`. Full commands: [user-install.md](user-install.md).
+`.\scripts\init.ps1 -Scope global` copies the agent and skills to `%USERPROFILE%\.copilot\` and MCP binaries to `%LOCALAPPDATA%\devops-troubleshooter`. Full commands: [user-install.md](user-install.md).

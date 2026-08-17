@@ -94,13 +94,21 @@ $inspect = Get-Content ".vscode/mcp.binary.windows.json" -Raw | ConvertFrom-Json
 $args = $inspect.servers.'kubernetes-inspect'.args -join ' '
 if ($args -match '--read-only') { Ok "windows binary inspect is read-only" } else { Bad "inspect missing --read-only" }
 
+$initPs1 = Get-Content "scripts/init.ps1" -Raw
+if ($initPs1 -match '\$Scope' -and $initPs1 -match 'Install scope') { Ok "init.ps1 asks workspace vs global" } else { Bad "init.ps1 missing -Scope prompt" }
+
 & "$Root\scripts\init.ps1" -DiscoverOnly | Out-Null
 if (Test-Path ".devops-troubleshooter-init.json") {
-  Get-Content -Raw ".devops-troubleshooter-init.json" | ConvertFrom-Json | Out-Null
+  $rep = Get-Content -Raw ".devops-troubleshooter-init.json" | ConvertFrom-Json
   Ok "init.ps1 -DiscoverOnly"
+  if ($rep.scope) { Ok "init report has scope" } else { Bad "init report missing scope" }
 } else {
   Bad "init.ps1 did not write report"
 }
+
+& "$Root\scripts\init.ps1" -DiscoverOnly -Scope global | Out-Null
+$rep2 = Get-Content -Raw ".devops-troubleshooter-init.json" | ConvertFrom-Json
+if ($rep2.scope -eq "global") { Ok "init.ps1 -DiscoverOnly -Scope global" } else { Bad "init report did not record scope global" }
 
 if ($fail -ne 0) {
   Write-Host "== kit FAILED"

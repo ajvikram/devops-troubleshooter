@@ -4,6 +4,8 @@ set -euo pipefail
 # Discover OS / IDE / agent harness and write MCP + agent config for this machine.
 #
 #   ./scripts/init.sh
+#   ./scripts/init.sh --scope global
+#   ./scripts/init.sh --scope workspace --yes
 #   ./scripts/init.sh --mcp grafana,postgres,mongodb
 #   ./scripts/init.sh --yes
 #   ./scripts/init.sh --discover-only
@@ -23,9 +25,13 @@ WITH_DB=false
 ASSUME_YES=false
 MCP_SELECT=""
 IDE_FILTER=""
+SCOPE=""
 PROXY="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
 CACERT="${SSL_CERT_FILE:-${CURL_CA_BUNDLE:-}}"
 KUBECONFIG_FLAG=""
+GLOBAL_ROOT="${DTO_HOME:-${HOME}/.local/share/devops-troubleshooter}"
+COPILOT_USER="${HOME}/.copilot"
+CURSOR_USER="${HOME}/.cursor"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +49,8 @@ while [ $# -gt 0 ]; do
     --cacert=*) CACERT="${1#--cacert=}" ;;
     --kubeconfig) KUBECONFIG_FLAG="${2:-}"; shift ;;
     --kubeconfig=*) KUBECONFIG_FLAG="${1#--kubeconfig=}" ;;
+    --scope) SCOPE="${2:-}"; shift ;;
+    --scope=*) SCOPE="${1#--scope=}" ;;
     --help|-h)
       cat <<'EOF'
 Usage: ./scripts/init.sh [options]
@@ -50,18 +58,21 @@ Usage: ./scripts/init.sh [options]
 Discover platform, IDEs, and agent harnesses, then write MCP configs.
 
   --discover-only         Print discovery report only (no downloads, no writes)
+  --scope workspace|global
+                          workspace = this repo only (default for --yes / CI)
+                          global    = every workspace (~/.copilot + user MCP)
   --ide vscode,cursor,cli,jetbrains  Limit config writes (aliases: vs, cli, jb, claude)
   --mcp LIST              Non-interactive MCP pick (comma-separated). Always includes kubernetes.
                           Names: grafana,postgres,mysql,oracle,mssql,sqlite,clickhouse,
                           elasticsearch,neo4j,snowflake,mongodb  (or: all)
-  --yes, -y               Skip the MCP prompt (kubernetes only, plus --mcp / --with-* / mcp.env)
+  --yes, -y               Skip scope + MCP prompts (workspace, kubernetes only, plus --mcp / --with-* / mcp.env)
   --with-observability    Add Grafana MCP (same as including grafana in --mcp)
   --with-databases        Download mcp-toolbox (still pick engines via prompt or --mcp)
   --proxy URL             HTTP proxy for binary download
   --cacert PEM            Corporate CA for binary download
   --kubeconfig PATHS      KUBECONFIG for MCP (one file, or colon-separated files on Unix)
 
-On a TTY, init asks which optional MCPs to download and wire. CI / pipes skip the prompt.
+On a TTY, init asks workspace vs global, then which optional MCPs to download.
 EOF
       exit 0
       ;;
@@ -71,6 +82,20 @@ EOF
 done
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+normalize_scope() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')" in
+    "" ) printf '' ;;
+    workspace|repo|local|1) printf 'workspace' ;;
+    global|user|profile|2) printf 'global' ;;
+    *)
+      echo "Unknown --scope: $1 (use workspace or global)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+SCOPE="$(normalize_scope "$SCOPE")"
 
 os_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch_raw="$(uname -m)"
@@ -89,6 +114,12 @@ esac
 if [ "$os" = "windows" ]; then
   echo "Use scripts/init.ps1 on Windows." >&2
   exit 1
+fi
+
+if [ "$os" = "darwin" ]; then
+  VSCODE_USER_MCP="${HOME}/Library/Application Support/Code/User/mcp.json"
+else
+  VSCODE_USER_MCP="${XDG_CONFIG_HOME:-${HOME}/.config}/Code/User/mcp.json"
 fi
 
 EXE=""
@@ -192,6 +223,8 @@ print_report() {
 {
   "platform": {"os": "$os", "arch": "$arch"},
   "workspace": "$ROOT_DIR",
+  "scope": "${SCOPE:-workspace}",
+  "global_root": "$GLOBAL_ROOT",
   "session": "$session",
   "ides": "$ides",
   "harness": "$harness",
@@ -210,6 +243,33 @@ print_report() {
   }
 }
 EOF
+}
+
+resolve_scope() {
+  if [ -n "$SCOPE" ]; then
+    echo "Install scope: $SCOPE (--scope)"
+    return
+  fi
+  if [ "$ASSUME_YES" = true ] || [ -n "${GITHUB_ACTIONS:-}${CI:-}" ] || [ ! -t 0 ]; then
+    SCOPE=workspace
+    echo "Install scope: workspace (non-interactive default)"
+    return
+  fi
+  cat <<'EOF'
+
+Install scope:
+  1) workspace — this repo only (.vscode/mcp.json, .github/agents)
+  2) global    — every workspace (~/.copilot agents/skills + user MCP)
+
+EOF
+  printf 'Scope [workspace]: '
+  local ans=""
+  read -r ans || true
+  case "$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]' | tr -d ' ')" in
+    2|g|global|user|profile) SCOPE=global ;;
+    *) SCOPE=workspace ;;
+  esac
+  echo "Install scope: $SCOPE"
 }
 
 echo "DevOps Troubleshooter init"
@@ -232,24 +292,40 @@ if [ "$DISCOVER_ONLY" = true ]; then
   exit 0
 fi
 
+resolve_scope
+print_report > "$REPORT"
+
 # --- binaries ---
 setup_args=()
 [ -n "$PROXY" ] && setup_args+=(--proxy "$PROXY")
 [ -n "$CACERT" ] && setup_args+=(--cacert "$CACERT")
 
-[ -f "${VSCODE_DIR}/mcp.env" ] || cp "${VSCODE_DIR}/mcp.env.example" "${VSCODE_DIR}/mcp.env"
+if [ "$SCOPE" = global ]; then
+  mkdir -p "$GLOBAL_ROOT"
+  if [ ! -f "${GLOBAL_ROOT}/mcp.env" ]; then
+    if [ -f "${VSCODE_DIR}/mcp.env" ]; then
+      cp "${VSCODE_DIR}/mcp.env" "${GLOBAL_ROOT}/mcp.env"
+    else
+      cp "${VSCODE_DIR}/mcp.env.example" "${GLOBAL_ROOT}/mcp.env"
+    fi
+  fi
+  MCP_ENV_FILE="${GLOBAL_ROOT}/mcp.env"
+else
+  [ -f "${VSCODE_DIR}/mcp.env" ] || cp "${VSCODE_DIR}/mcp.env.example" "${VSCODE_DIR}/mcp.env"
+  MCP_ENV_FILE="${VSCODE_DIR}/mcp.env"
+fi
 
 if [ -n "$KUBECONFIG_FLAG" ]; then
-  envf="${VSCODE_DIR}/mcp.env"
+  envf="$MCP_ENV_FILE"
   tmp="${envf}.tmp"
   grep -vE '^[[:space:]]*#?[[:space:]]*KUBECONFIG=' "$envf" > "$tmp" || true
   printf 'KUBECONFIG=%s\n' "$kubeconfig" >> "$tmp"
   mv "$tmp" "$envf"
-  echo "Wrote KUBECONFIG to .vscode/mcp.env (restart kubernetes-inspect after init)"
+  echo "Wrote KUBECONFIG to $envf (restart kubernetes-inspect after init)"
 fi
 
 env_has() {
-  [ -f "${VSCODE_DIR}/mcp.env" ] && grep -qE "^[[:space:]]*$1=.+" "${VSCODE_DIR}/mcp.env"
+  [ -f "$MCP_ENV_FILE" ] && grep -qE "^[[:space:]]*$1=.+" "$MCP_ENV_FILE"
 }
 
 want_grafana=false
@@ -315,7 +391,7 @@ print_mcp_menu() {
   cat <<EOF
 
 Choose optional MCP servers to download and wire. kubernetes-inspect is always installed.
-  [*] = already selected from flags or .vscode/mcp.env
+  [*] = already selected from flags or mcp.env
 
   $(flag "$want_grafana")  1) grafana         Prometheus + Loki via Grafana (uvx)
   $(flag "$want_postgres")  2) postgres
@@ -381,6 +457,21 @@ if [ "$WITH_DB" = true ] || [ "$want_toolbox" = true ]; then
   fi
 fi
 
+K8S_USE="$K8S_BIN"
+TOOLBOX_USE="$TOOLBOX_BIN"
+if [ "$SCOPE" = global ]; then
+  mkdir -p "${GLOBAL_ROOT}/bin"
+  cp -f "$K8S_BIN" "${GLOBAL_ROOT}/bin/kubernetes-mcp-server"
+  chmod +x "${GLOBAL_ROOT}/bin/kubernetes-mcp-server"
+  K8S_USE="${GLOBAL_ROOT}/bin/kubernetes-mcp-server"
+  if [ -x "$TOOLBOX_BIN" ]; then
+    cp -f "$TOOLBOX_BIN" "${GLOBAL_ROOT}/bin/toolbox"
+    chmod +x "${GLOBAL_ROOT}/bin/toolbox"
+    TOOLBOX_USE="${GLOBAL_ROOT}/bin/toolbox"
+  fi
+  echo "Installed MCP binaries under ${GLOBAL_ROOT}/bin"
+fi
+
 normalize_ide() {
   case "$1" in
     vs|vscode) echo vscode ;;
@@ -412,6 +503,7 @@ write_copilot_mcp() {
   local dest="$1"
   local k8s="$2"
   local extra="$3"
+  local envf="${4:-$MCP_ENV_FILE}"
   mkdir -p "$(dirname "$dest")"
   cat > "$dest" <<EOF
 {
@@ -420,18 +512,83 @@ write_copilot_mcp() {
       "type": "stdio",
       "command": "$k8s",
       "args": ["--read-only", "--toolsets", "core,config,helm"],
-      "envFile": "${VSCODE_DIR}/mcp.env"
+      "envFile": "${envf}"
     }${extra}
   }
 }
 EOF
 }
 
+merge_json_map() {
+  local dest="$1" key="$2" src="$3"
+  if have python3; then
+    python3 - "$dest" "$key" "$src" <<'PY'
+import json, os, sys
+dest, key, src = sys.argv[1:4]
+new = json.load(open(src, encoding="utf-8"))
+old = {}
+if os.path.exists(dest):
+    try:
+        old = json.load(open(dest, encoding="utf-8"))
+    except Exception:
+        old = {}
+if not isinstance(old, dict):
+    old = {}
+incoming = new.get(key)
+if incoming is None:
+    incoming = new.get("servers") or new.get("mcpServers") or {}
+if not isinstance(incoming, dict):
+    incoming = {}
+target_key = key
+if key not in old and "mcpServers" in old and "servers" not in old:
+    target_key = "mcpServers"
+if target_key not in old or not isinstance(old.get(target_key), dict):
+    old[target_key] = {}
+old[target_key].update(incoming)
+parent = os.path.dirname(dest)
+if parent:
+    os.makedirs(parent, exist_ok=True)
+with open(dest, "w", encoding="utf-8") as f:
+    json.dump(old, f, indent=2)
+    f.write("\n")
+PY
+  else
+    mkdir -p "$(dirname "$dest")"
+    cp "$src" "$dest"
+  fi
+}
+
+install_global_kit_files() {
+  mkdir -p "${COPILOT_USER}/agents" "${COPILOT_USER}/skills" "${COPILOT_USER}/prompts"
+  cp -f "${ROOT_DIR}/.github/agents/devops-troubleshooter.agent.md" "${COPILOT_USER}/agents/"
+  local skill
+  for skill in "${ROOT_DIR}"/.github/skills/*/SKILL.md; do
+    [ -f "$skill" ] || continue
+    local name
+    name="$(basename "$(dirname "$skill")")"
+    mkdir -p "${COPILOT_USER}/skills/${name}"
+    cp -f "$skill" "${COPILOT_USER}/skills/${name}/"
+  done
+  cp -f "${ROOT_DIR}"/.github/prompts/*.prompt.md "${COPILOT_USER}/prompts/" 2>/dev/null || true
+  echo "Copied agent, skills, and prompts to ${COPILOT_USER}"
+  if want_ide cursor || [ "$session" = "cursor" ] || [ -d "${ROOT_DIR}/.cursor" ] || [ -d "$CURSOR_USER" ]; then
+    mkdir -p "${CURSOR_USER}/skills"
+    for skill in "${ROOT_DIR}"/.github/skills/*/SKILL.md; do
+      [ -f "$skill" ] || continue
+      local name
+      name="$(basename "$(dirname "$skill")")"
+      mkdir -p "${CURSOR_USER}/skills/${name}"
+      cp -f "$skill" "${CURSOR_USER}/skills/${name}/"
+    done
+    echo "Copied skills to ${CURSOR_USER}/skills"
+  fi
+}
+
 DB_CMD="npx"
 DB_PREFIX='["-y", "@toolbox-sdk/server", "--prebuilt='
 DB_SUFFIX='", "--stdio"]'
-if [ -x "$TOOLBOX_BIN" ]; then
-  DB_CMD="$TOOLBOX_BIN"
+if [ -x "$TOOLBOX_USE" ]; then
+  DB_CMD="$TOOLBOX_USE"
   DB_PREFIX='["--prebuilt='
   DB_SUFFIX='", "--stdio"]'
 fi
@@ -445,7 +602,7 @@ add_db_server() {
       "type": "stdio",
       "command": "$DB_CMD",
       "args": ${DB_PREFIX}${prebuilt}${DB_SUFFIX},
-      "envFile": "${VSCODE_DIR}/mcp.env"
+      "envFile": "${MCP_ENV_FILE}"
     }
 EOF
 )
@@ -466,22 +623,22 @@ if [ "$want_mongodb" = true ]; then
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
-      "envFile": "${VSCODE_DIR}/mcp.env"
+      "envFile": "${MCP_ENV_FILE}"
     }
 EOF
 )
 fi
-if [ "$want_postgres" = true ] && ! env_has POSTGRES_HOST; then echo "  Reminder: set POSTGRES_HOST (and related) in .vscode/mcp.env"; fi
-if [ "$want_mysql" = true ] && ! env_has MYSQL_HOST; then echo "  Reminder: set MYSQL_HOST in .vscode/mcp.env"; fi
-if [ "$want_oracle" = true ] && ! env_has ORACLE_CONNECTION_STRING; then echo "  Reminder: set ORACLE_CONNECTION_STRING in .vscode/mcp.env"; fi
-if [ "$want_mssql" = true ] && ! env_has MSSQL_HOST; then echo "  Reminder: set MSSQL_HOST in .vscode/mcp.env"; fi
-if [ "$want_sqlite" = true ] && ! env_has SQLITE_DATABASE; then echo "  Reminder: set SQLITE_DATABASE in .vscode/mcp.env"; fi
-if [ "$want_clickhouse" = true ] && ! env_has CLICKHOUSE_HOST; then echo "  Reminder: set CLICKHOUSE_HOST in .vscode/mcp.env"; fi
-if [ "$want_elasticsearch" = true ] && ! env_has ELASTICSEARCH_HOST; then echo "  Reminder: set ELASTICSEARCH_HOST in .vscode/mcp.env"; fi
-if [ "$want_neo4j" = true ] && ! env_has NEO4J_URI; then echo "  Reminder: set NEO4J_URI in .vscode/mcp.env"; fi
-if [ "$want_snowflake" = true ] && ! env_has SNOWFLAKE_ACCOUNT; then echo "  Reminder: set SNOWFLAKE_ACCOUNT in .vscode/mcp.env"; fi
-if [ "$want_mongodb" = true ] && ! env_has MDB_MCP_CONNECTION_STRING; then echo "  Reminder: set MDB_MCP_CONNECTION_STRING in .vscode/mcp.env"; fi
-if [ "$want_grafana" = true ] && ! env_has GRAFANA_URL; then echo "  Reminder: set GRAFANA_URL and GRAFANA_SERVICE_ACCOUNT_TOKEN in .vscode/mcp.env"; fi
+if [ "$want_postgres" = true ] && ! env_has POSTGRES_HOST; then echo "  Reminder: set POSTGRES_HOST (and related) in $MCP_ENV_FILE"; fi
+if [ "$want_mysql" = true ] && ! env_has MYSQL_HOST; then echo "  Reminder: set MYSQL_HOST in $MCP_ENV_FILE"; fi
+if [ "$want_oracle" = true ] && ! env_has ORACLE_CONNECTION_STRING; then echo "  Reminder: set ORACLE_CONNECTION_STRING in $MCP_ENV_FILE"; fi
+if [ "$want_mssql" = true ] && ! env_has MSSQL_HOST; then echo "  Reminder: set MSSQL_HOST in $MCP_ENV_FILE"; fi
+if [ "$want_sqlite" = true ] && ! env_has SQLITE_DATABASE; then echo "  Reminder: set SQLITE_DATABASE in $MCP_ENV_FILE"; fi
+if [ "$want_clickhouse" = true ] && ! env_has CLICKHOUSE_HOST; then echo "  Reminder: set CLICKHOUSE_HOST in $MCP_ENV_FILE"; fi
+if [ "$want_elasticsearch" = true ] && ! env_has ELASTICSEARCH_HOST; then echo "  Reminder: set ELASTICSEARCH_HOST in $MCP_ENV_FILE"; fi
+if [ "$want_neo4j" = true ] && ! env_has NEO4J_URI; then echo "  Reminder: set NEO4J_URI in $MCP_ENV_FILE"; fi
+if [ "$want_snowflake" = true ] && ! env_has SNOWFLAKE_ACCOUNT; then echo "  Reminder: set SNOWFLAKE_ACCOUNT in $MCP_ENV_FILE"; fi
+if [ "$want_mongodb" = true ] && ! env_has MDB_MCP_CONNECTION_STRING; then echo "  Reminder: set MDB_MCP_CONNECTION_STRING in $MCP_ENV_FILE"; fi
+if [ "$want_grafana" = true ] && ! env_has GRAFANA_URL; then echo "  Reminder: set GRAFANA_URL and GRAFANA_SERVICE_ACCOUNT_TOKEN in $MCP_ENV_FILE"; fi
 if [ "$want_mongodb" = true ]; then echo "  MongoDB package downloads via npx the first time you start db-mongodb."; fi
 if [ "$want_grafana" = true ]; then echo "  Grafana package downloads via uvx the first time you start grafana."; fi
 
@@ -494,7 +651,7 @@ if [ "$grafana" = true ]; then
       "type": "stdio",
       "command": "uvx",
       "args": '"${GRAFANA_ARGS}"',
-      "envFile": "'"${VSCODE_DIR}/mcp.env"'"
+      "envFile": "'"${MCP_ENV_FILE}"'"
     }'
   else
     echo "Note: --with-observability needs uvx (https://docs.astral.sh/uv/). Skipping Grafana MCP."
@@ -503,23 +660,11 @@ fi
 
 EXTRA_BLOCK="${DB_BLOCK}${GRAFANA_BLOCK}"
 
-write_copilot_mcp "${ROOT_DIR}/.mcp.json" "$K8S_BIN" "$EXTRA_BLOCK"
-echo "Wrote .mcp.json (Copilot CLI, Agent Host, Visual Studio, JetBrains workspace)"
-
-if want_ide vscode || [ -z "$IDE_FILTER" ]; then
-  write_copilot_mcp "${VSCODE_DIR}/mcp.json" "$K8S_BIN" "$EXTRA_BLOCK"
-  echo "Wrote .vscode/mcp.json"
-fi
-
-if want_ide jetbrains || [ -d "${ROOT_DIR}/.idea" ]; then
-  mkdir -p "${ROOT_DIR}/.github"
-  write_copilot_mcp "${ROOT_DIR}/.github/mcp.json" "$K8S_BIN" "$EXTRA_BLOCK"
-  echo "Wrote .github/mcp.json (JetBrains Copilot workspace MCP)"
-fi
-
-if want_ide cursor || [ "$session" = "cursor" ] || [ -d "${ROOT_DIR}/.cursor" ]; then
-  mkdir -p "${ROOT_DIR}/.cursor"
-  grafana_cursor=""
+write_cursor_mcp() {
+  local dest="$1"
+  local k8s="$2"
+  mkdir -p "$(dirname "$dest")"
+  local grafana_cursor=""
   if [ -n "$GRAFANA_BLOCK" ]; then
     grafana_cursor=',
     "grafana": {
@@ -527,27 +672,68 @@ if want_ide cursor || [ "$session" = "cursor" ] || [ -d "${ROOT_DIR}/.cursor" ];
       "args": ["mcp-grafana", "--disable-write", "--enabled-tools", "datasource,prometheus,loki"]
     }'
   fi
-  cat > "${ROOT_DIR}/.cursor/mcp.json" <<EOF
+  cat > "$dest" <<EOF
 {
   "mcpServers": {
     "kubernetes-inspect": {
-      "command": "$K8S_BIN",
+      "command": "$k8s",
       "args": ["--read-only", "--toolsets", "core,config,helm"],
       "env": { "KUBECONFIG": "$kubeconfig" }
     }${DB_BLOCK}${grafana_cursor}
   }
 }
 EOF
-  echo "Wrote .cursor/mcp.json (Cursor mcpServers format)"
-fi
+}
 
-if want_ide copilot-cli || { [ -z "$IDE_FILTER" ] && have copilot; }; then
-  mkdir -p "${HOME}/.copilot"
-  if [ ! -f "${HOME}/.copilot/mcp-config.json" ]; then
-    write_copilot_mcp "${HOME}/.copilot/mcp-config.json" "$K8S_BIN" "$EXTRA_BLOCK"
-    echo "Wrote ~/.copilot/mcp-config.json"
-  else
-    echo "Left existing ~/.copilot/mcp-config.json unchanged"
+if [ "$SCOPE" = global ]; then
+  install_global_kit_files
+  tmp_mcp="$(mktemp)"
+  write_copilot_mcp "$tmp_mcp" "$K8S_USE" "$EXTRA_BLOCK" "$MCP_ENV_FILE"
+  merge_json_map "${COPILOT_USER}/mcp-config.json" servers "$tmp_mcp"
+  echo "Wrote ${COPILOT_USER}/mcp-config.json"
+  if want_ide vscode || [ -z "$IDE_FILTER" ]; then
+    if [ -d "$(dirname "$VSCODE_USER_MCP")" ] || want_ide vscode; then
+      merge_json_map "$VSCODE_USER_MCP" servers "$tmp_mcp"
+      echo "Wrote $VSCODE_USER_MCP"
+    fi
+  fi
+  rm -f "$tmp_mcp"
+  if want_ide cursor || [ "$session" = "cursor" ] || [ -d "$CURSOR_USER" ]; then
+    tmp_cursor="$(mktemp)"
+    write_cursor_mcp "$tmp_cursor" "$K8S_USE"
+    merge_json_map "${CURSOR_USER}/mcp.json" mcpServers "$tmp_cursor"
+    rm -f "$tmp_cursor"
+    echo "Wrote ${CURSOR_USER}/mcp.json"
+  fi
+  echo "Global install does not write workspace .mcp.json / .vscode/mcp.json"
+else
+  write_copilot_mcp "${ROOT_DIR}/.mcp.json" "$K8S_USE" "$EXTRA_BLOCK"
+  echo "Wrote .mcp.json (Copilot CLI, Agent Host, Visual Studio, JetBrains workspace)"
+
+  if want_ide vscode || [ -z "$IDE_FILTER" ]; then
+    write_copilot_mcp "${VSCODE_DIR}/mcp.json" "$K8S_USE" "$EXTRA_BLOCK"
+    echo "Wrote .vscode/mcp.json"
+  fi
+
+  if want_ide jetbrains || [ -d "${ROOT_DIR}/.idea" ]; then
+    mkdir -p "${ROOT_DIR}/.github"
+    write_copilot_mcp "${ROOT_DIR}/.github/mcp.json" "$K8S_USE" "$EXTRA_BLOCK"
+    echo "Wrote .github/mcp.json (JetBrains Copilot workspace MCP)"
+  fi
+
+  if want_ide cursor || [ "$session" = "cursor" ] || [ -d "${ROOT_DIR}/.cursor" ]; then
+    write_cursor_mcp "${ROOT_DIR}/.cursor/mcp.json" "$K8S_USE"
+    echo "Wrote .cursor/mcp.json (Cursor mcpServers format)"
+  fi
+
+  if want_ide copilot-cli || { [ -z "$IDE_FILTER" ] && have copilot; }; then
+    mkdir -p "${HOME}/.copilot"
+    if [ ! -f "${HOME}/.copilot/mcp-config.json" ]; then
+      write_copilot_mcp "${HOME}/.copilot/mcp-config.json" "$K8S_USE" "$EXTRA_BLOCK"
+      echo "Wrote ~/.copilot/mcp-config.json"
+    else
+      echo "Left existing ~/.copilot/mcp-config.json unchanged"
+    fi
   fi
 fi
 
@@ -563,6 +749,11 @@ if [ "$kubeconfig_exists" != true ]; then
 fi
 
 echo ""
-echo "Init complete. Report: $REPORT"
-echo "Next: open Copilot/Cursor Agent mode and choose DevOps Troubleshooter."
-echo "      MCP: start kubernetes-inspect (and grafana / db-* if enabled)."
+echo "Init complete ($SCOPE). Report: $REPORT"
+if [ "$SCOPE" = global ]; then
+  echo "Next: open any workspace → Copilot/Cursor Agent mode → DevOps Troubleshooter."
+  echo "      Reload the window if the agent is missing. MCP: start kubernetes-inspect."
+else
+  echo "Next: open this repo in Copilot/Cursor Agent mode and choose DevOps Troubleshooter."
+  echo "      MCP: start kubernetes-inspect (and grafana / db-* if enabled)."
+fi
