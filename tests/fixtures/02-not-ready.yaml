@@ -1,0 +1,48 @@
+# Not Ready: process stays up, TCP probe on a closed port → Ready=False, empty Endpoints.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: not-ready
+  namespace: dto-e2e
+  labels:
+    app: not-ready
+    dto-e2e: not-ready
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: not-ready
+  template:
+    metadata:
+      labels:
+        app: not-ready
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["/bin/sleep", "3600"]
+          readinessProbe:
+            tcpSocket:
+              port: 9999
+            initialDelaySeconds: 1
+            periodSeconds: 2
+            failureThreshold: 1
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 20m
+              memory: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: not-ready
+  namespace: dto-e2e
+spec:
+  selector:
+    app: not-ready
+  ports:
+    - port: 80
+      targetPort: 80

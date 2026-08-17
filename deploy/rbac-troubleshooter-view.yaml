@@ -1,0 +1,85 @@
+# Bind a least-privilege identity for the DevOps Troubleshooter (identification only).
+# The remediator needs a different Role (not this file).
+#
+#   kubectl apply -f deploy/rbac-troubleshooter-view.yaml
+#
+# Point KUBECONFIG at a kubeconfig whose user is this ServiceAccount
+# (or equivalent OIDC user bound the same ClusterRole).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devops-troubleshooter
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: devops-troubleshooter
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devops-troubleshooter-view
+  labels:
+    app.kubernetes.io/name: devops-troubleshooter
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - endpointslices
+      - configmaps
+      - events
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - resourcequotas
+      - limitranges
+      - replicationcontrollers
+      - secrets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies", "ingressclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applicationsets", "appprojects"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "source.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devops-troubleshooter-view
+  labels:
+    app.kubernetes.io/name: devops-troubleshooter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devops-troubleshooter-view
+subjects:
+  - kind: ServiceAccount
+    name: devops-troubleshooter
+    namespace: kube-system

@@ -1,0 +1,64 @@
+{
+  "servers": {
+    "db-postgres": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=postgres", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mysql": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=mysql", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-oracle": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=oracle", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mssql": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=mssql", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-sqlite": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=sqlite", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-clickhouse": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=clickhouse", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-elasticsearch": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=elasticsearch", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-neo4j": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=neo4j", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-snowflake": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\toolbox.exe",
+      "args": ["--prebuilt=snowflake", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mongodb": {
+      "type": "stdio",
+      "command": "npx.cmd",
+      "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    }
+  }
+}

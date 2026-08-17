@@ -1,0 +1,22 @@
+# Example Argo CD Application (not applied by e2e — requires the Argo CRD).
+# The gitops skill looks for this shape on a real cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: payments-api
+  namespace: argocd
+  labels:
+    dto-e2e: sample-only
+spec:
+  project: default
+  source:
+    repoURL: https://git.example.com/org/payments-api.git
+    targetRevision: main
+    path: charts/payments-api
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: payments
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false

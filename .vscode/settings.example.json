@@ -1,0 +1,9 @@
+{
+  "http.proxy": "http://proxy.corp.example.com:8080",
+  "http.proxySupport": "override",
+  "http.proxyStrictSSL": true,
+  "http.systemCertificates": true,
+  "github.copilot.advanced.debug.useElectronFetcher": true,
+  "chat.mcp.access": "any",
+  "chat.mcp.autostart": "newAndOutdated"
+}

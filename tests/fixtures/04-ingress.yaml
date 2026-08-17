@@ -1,0 +1,26 @@
+# Edge identification: Ingress points at a Service that does not exist.
+# TLS secretName is also missing. No Ingress controller required — object evidence only.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payments
+  namespace: dto-e2e
+  labels:
+    dto-e2e: ingress
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - payments.example.test
+      secretName: payments-tls-missing
+  rules:
+    - host: payments.example.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: does-not-exist
+                port:
+                  number: 80

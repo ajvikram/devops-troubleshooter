@@ -1,0 +1,64 @@
+{
+  "servers": {
+    "db-postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=postgres", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mysql": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=mysql", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-oracle": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=oracle", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mssql": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=mssql", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-sqlite": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=sqlite", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-clickhouse": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=clickhouse", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-elasticsearch": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=elasticsearch", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-neo4j": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=neo4j", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-snowflake": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@toolbox-sdk/server", "--prebuilt=snowflake", "--stdio"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    },
+    "db-mongodb": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mongodb-mcp-server@latest", "--readOnly"],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    }
+  }
+}

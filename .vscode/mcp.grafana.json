@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "grafana": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "mcp-grafana",
+        "--disable-write",
+        "--enabled-tools",
+        "datasource,prometheus,loki"
+      ],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    }
+  }
+}

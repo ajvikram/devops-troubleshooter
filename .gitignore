@@ -1,0 +1,30 @@
+# Downloaded MCP binaries (./scripts/setup.sh or init)
+bin/
+
+# Local secrets — copy from .vscode/mcp.env.example
+.vscode/mcp.env
+.env
+.env.*
+!.vscode/mcp.env.example
+
+# Machine-specific init output (absolute binary paths)
+.devops-troubleshooter-init.json
+.mcp.json
+.github/mcp.json
+.cursor/mcp.json
+
+# Python (tests/mcp_stdio.py)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editors / local harness
+.idea/
+.cursor/
+*.iml
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dto-hist
+  labels:
+    app.kubernetes.io/name: dto-hist
+    dto-e2e: helm-history
+data:
+  note: {{ .Values.note | quote }}

@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "kubernetes-remediate": {
+      "type": "stdio",
+      "command": "${workspaceFolder}\\bin\\kubernetes-mcp-server.exe",
+      "args": [
+        "--toolsets",
+        "core,config,helm"
+      ],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    }
+  }
+}

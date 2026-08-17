@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "kubernetes-inspect": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "kubernetes-mcp-server@latest",
+        "--read-only",
+        "--toolsets",
+        "core,config,helm"
+      ],
+      "envFile": "${workspaceFolder}/.vscode/mcp.env"
+    }
+  }
+}

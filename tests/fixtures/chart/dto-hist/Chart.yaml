@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dto-hist
+description: Tiny chart so e2e can assert helm history (identification only)
+type: application
+version: 0.1.0
+appVersion: "1.0"

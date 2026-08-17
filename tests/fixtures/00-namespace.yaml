@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dto-e2e
+  labels:
+    app.kubernetes.io/part-of: devops-troubleshooter
+    dto-e2e: "true"
